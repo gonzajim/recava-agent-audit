@@ -1,0 +1,26 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+    [
+      'build',
+      '-t',
+      'europe-west1-docker.pkg.dev/mi-proyecto-12345/orchestrator-repo/orchestrator',
+      '.'
+    ]
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+    [
+      'push',
+      'europe-west1-docker.pkg.dev/mi-proyecto-12345/orchestrator-repo/orchestrator'
+    ]
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  entrypoint: 'bash'
+  args:
+    - '-c'
+    - |
+      gcloud run deploy orchestrator \
+        --image=europe-west1-docker.pkg.dev/mi-proyecto-12345/orchestrator-repo/orchestrator \
+        --region=europe-west1 \
+        --platform=managed \
+        --allow-unauthenticated \
+        --set-env-vars OPENAI_API_KEY,ASISTENTE_ID,AUDITOR_ID
