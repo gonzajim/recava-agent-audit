@@ -8,8 +8,6 @@ o mediante llamadas directas a la API REST expuesta por Cloud Run.
 La capa de autenticación y control de acceso se gestiona con IAM de GCP (permiso Cloud Run Invoker para allUsers o grupos específicos) o con un API Gateway/IAP si se requiere seguridad adicional. 
 Desde dispositivos móviles basta con cargar la misma interfaz web en un WebView o envolver peticiones al endpoint REST. Los desarrolladores integran el widget copiando un script de JavaScript que carga un iframe apuntando a un servidor estático (React/Vite/Tailwind) que sirva la UI de chat y, tras cada mensaje del usuario, el frontend envía la petición al Orquestador en Cloud Run, que invoca los Assistants de OpenAI y retorna la respuesta al cliente.
 
-Test
-
 1. interacción del usuario
 El usuario escribe en el chat widget incrustado en tu web o app móvil. El componente front-end simplemente envía un POST JSON al endpoint HTTPS de Cloud Run. Comunidad OpenAIGoogle Cloud
 2. orquestador en Cloud Run
