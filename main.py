@@ -20,6 +20,7 @@ if not all([api_key, assistant_id, auditor_id]):
 
 client = OpenAI(api_key=api_key)
 
+
 # Configurar orquestador
 orch = Orchestrator(
     name="auditoria_orquestador",
