@@ -1,37 +1,46 @@
 # cloudbuild.yaml
 
-# Anula por completo cualquier substitution que venga del Trigger
-substitutions: {}
-
 availableSecrets:
   secretManager:
-    - versionName: projects/TODO_PROJECT_ID/secrets/openai-api-key/versions/latest
+    - versionName: projects/recava-agent-audit/secrets/OPENAI_API_KEY/versions/latest
       env: OPENAI_API_KEY
-    - versionName: projects/TODO_PROJECT_ID/secrets/assistant-id/versions/latest
+    - versionName: projects/recava-agent-audit/secrets/ASISTENTE_ID/versions/latest
       env: ASISTENTE_ID
-    - versionName: projects/TODO_PROJECT_ID/secrets/auditor-id/versions/latest
+    - versionName: projects/recava-agent-audit/secrets/AUDITOR_ID/versions/latest
       env: AUDITOR_ID
 
 steps:
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['build','-t','europe-west1-docker.pkg.dev/TODO_PROJECT_ID/orchestrator-repo/orchestrator','.']
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push','europe-west1-docker.pkg.dev/TODO_PROJECT_ID/orchestrator-repo/orchestrator']
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: bash
-    secretEnv:
-      - 'OPENAI_API_KEY'
-      - 'ASISTENTE_ID'
-      - 'AUDITOR_ID'
-    args:
-      - '-c'
-      - |
-        gcloud run deploy orchestrator \
-          --image=europe-west1-docker.pkg.dev/TODO_PROJECT_ID/orchestrator-repo/orchestrator \
-          --region=europe-west1 \
-          --platform=managed \
-          --allow-unauthenticated \
-          --set-env-vars OPENAI_API_KEY=$OPENAI_API_KEY,ASISTENTE_ID=$ASISTENTE_ID,AUDITOR_ID=$AUDITOR_ID
+# 1) Build & push Docker
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+    ['build',
+     '-t',
+     'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator',
+     '.']
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+    ['push',
+     'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator']
+
+# 2) Deploy en Cloud Run
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  entrypoint: bash
+  secretEnv:
+    - OPENAI_API_KEY
+    - ASISTENTE_ID
+    - AUDITOR_ID
+  args:
+    - -c
+    - |
+      gcloud run deploy orchestrator \
+        --image=europe-west1-docker.pkg.dev/TODO_PROJECT_ID/orchestrator-repo/orchestrator \
+        --region=europe-west1 \
+        --platform=managed \
+        --allow-unauthenticated \
+        --set-env-vars \
+            OPENAI_API_KEY=$OPENAI_API_KEY,\
+            ASISTENTE_ID=$ASISTENTE_ID,\
+            AUDITOR_ID=$AUDITOR_ID
 
 images:
   - 'europe-west1-docker.pkg.dev/TODO_PROJECT_ID/orchestrator-repo/orchestrator'
