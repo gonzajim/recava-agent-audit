@@ -1,42 +1,30 @@
-# cloudbuild.yaml
-
-substitutions: {}    # ← anula cualquier entrada heredada de substitutions
+substitutions: {}          # anula cualquier substitutions heredada
 
 availableSecrets:
   secretManager:
     - versionName: projects/recava-agent-audit/secrets/OPENAI_API_KEY/versions/latest
-      env: OPENAI_API_KEY
+      env: _OPENAI_API_KEY          # ← guion bajo
     - versionName: projects/recava-agent-audit/secrets/ASISTENTE_ID/versions/latest
-      env: ASISTENTE_ID
+      env: _ASISTENTE_ID
     - versionName: projects/recava-agent-audit/secrets/AUDITOR_ID/versions/latest
-      env: AUDITOR_ID
+      env: _AUDITOR_ID
 
 steps:
-  # 1) Build de la imagen Docker
+  # 1) Build
   - name: 'gcr.io/cloud-builders/docker'
-    args:
-      [
-        'build',
-        '-t',
-        'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator',
-        '.'
-      ]
+    args: ['build','-t','europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator','.']
 
-  # 2) Push de la imagen
+  # 2) Push
   - name: 'gcr.io/cloud-builders/docker'
-    args:
-      [
-        'push',
-        'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator'
-      ]
+    args: ['push','europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator']
 
-  # 3) Despliegue en Cloud Run con los secretos inyectados
+  # 3) Deploy
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
-    secretEnv:
-      - OPENAI_API_KEY
-      - ASISTENTE_ID
-      - AUDITOR_ID
+    secretEnv:       # ← usa los nombres con _
+      - _OPENAI_API_KEY
+      - _ASISTENTE_ID
+      - _AUDITOR_ID
     args:
       - -c
       - |
@@ -46,7 +34,9 @@ steps:
           --platform=managed \
           --allow-unauthenticated \
           --set-env-vars \
-              OPENAI_API_KEY=$OPENAI_API_KEY,ASISTENTE_ID=$ASISTENTE_ID,AUDITOR_ID=$AUDITOR_ID
+              OPENAI_API_KEY=$_OPENAI_API_KEY,\
+              ASISTENTE_ID=$_ASISTENTE_ID,\
+              AUDITOR_ID=$_AUDITOR_ID
 
 images:
   - 'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator'
