@@ -28,15 +28,7 @@ steps:
     args:
       - -c
       - |
-        gcloud run deploy orchestrator \
-          --image=europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator \
-          --region=europe-west1 \
-          --platform=managed \
-          --allow-unauthenticated \
-          --set-env-vars \
-              OPENAI_API_KEY=$_OPENAI_API_KEY,\
-              ASISTENTE_ID=$_ASISTENTE_ID,\
-              AUDITOR_ID=$_AUDITOR_ID
+        gcloud run deploy orchestrator --image=europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator --region=europe-west1 --platform=managed --allow-unauthenticated --set-env-vars OPENAI_API_KEY=$_OPENAI_API_KEY,ASISTENTE_ID=$_ASISTENTE_ID,AUDITOR_ID=$_AUDITOR_ID
 
 images:
   - 'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator'
