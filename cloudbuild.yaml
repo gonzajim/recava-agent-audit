@@ -1,5 +1,7 @@
 # cloudbuild.yaml
 
+substitutions: {}    # ← anula cualquier entrada heredada de substitutions
+
 availableSecrets:
   secretManager:
     - versionName: projects/recava-agent-audit/secrets/OPENAI_API_KEY/versions/latest
@@ -10,40 +12,44 @@ availableSecrets:
       env: AUDITOR_ID
 
 steps:
-# 1) Build & push Docker
-- name: 'gcr.io/cloud-builders/docker'
-  args:
-    ['build',
-     '-t',
-     'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator',
-     '.']
-- name: 'gcr.io/cloud-builders/docker'
-  args:
-    ['push',
-     'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator']
+  # 1) Build de la imagen Docker
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      [
+        'build',
+        '-t',
+        'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator',
+        '.'
+      ]
 
-# 2) Deploy en Cloud Run
-- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-  entrypoint: bash
-  secretEnv:
-    - OPENAI_API_KEY
-    - ASISTENTE_ID
-    - AUDITOR_ID
-  args:
-    - -c
-    - |
-      gcloud run deploy orchestrator \
-        --image=europe-west1-docker.pkg.dev/TODO_PROJECT_ID/orchestrator-repo/orchestrator \
-        --region=europe-west1 \
-        --platform=managed \
-        --allow-unauthenticated \
-        --set-env-vars \
-            OPENAI_API_KEY=$OPENAI_API_KEY,\
-            ASISTENTE_ID=$ASISTENTE_ID,\
-            AUDITOR_ID=$AUDITOR_ID
+  # 2) Push de la imagen
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      [
+        'push',
+        'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator'
+      ]
+
+  # 3) Despliegue en Cloud Run con los secretos inyectados
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    secretEnv:
+      - OPENAI_API_KEY
+      - ASISTENTE_ID
+      - AUDITOR_ID
+    args:
+      - -c
+      - |
+        gcloud run deploy orchestrator \
+          --image=europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator \
+          --region=europe-west1 \
+          --platform=managed \
+          --allow-unauthenticated \
+          --set-env-vars \
+              OPENAI_API_KEY=$OPENAI_API_KEY,ASISTENTE_ID=$ASISTENTE_ID,AUDITOR_ID=$AUDITOR_ID
 
 images:
-  - 'europe-west1-docker.pkg.dev/TODO_PROJECT_ID/orchestrator-repo/orchestrator'
+  - 'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator'
 
 options:
   defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
