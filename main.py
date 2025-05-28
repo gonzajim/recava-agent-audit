@@ -1,7 +1,7 @@
 import os
 from flask import Flask, request, jsonify
 from openai import OpenAI
-from openai.agents import Orchestrator, AgentConfig
+from agents import Orchestrator, AgentConfig
 from dotenv import load_dotenv
 
 # Carga .env para desarrollo local; ignóralo en producción

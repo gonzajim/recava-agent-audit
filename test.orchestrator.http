@@ -1,0 +1,5 @@
+### Prueba Orchestrador
+POST https://orchestrator-520199812528.europe-west1.run.app/orchestrate
+Content-Type: application/json
+
+{ "input": "¿Cuál es el estado actual de la auditoría de sostenibilidad?" }
