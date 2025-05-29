@@ -17,10 +17,8 @@ steps:
       - |
         # Asegúrate de que esta línea y las siguientes estén indentadas un nivel más
         # que la línea con el pipe "|".
-        echo "DEBUG_BUILD_STEP (Project Number Test): _OPENAI_API_KEY is [$_OPENAI_API_KEY]"
-        echo "DEBUG_BUILD_STEP (Project Number Test): _ORCHESTRATOR_ASSISTANT_ID is [$_ORCHESTRATOR_ASSISTANT_ID]"
-        echo "DEBUG_BUILD_STEP (Project Number Test): _ASISTENTE_ID is [$_ASISTENTE_ID]"
-        echo "DEBUG_BUILD_STEP (Project Number Test): _AUDITOR_ID is [$_AUDITOR_ID]"
+        # Las líneas de echo para depuración han sido eliminadas para esta corrección,
+        # puedes volver a añadirlas si necesitas depurar el acceso a los secretos.
 
         gcloud run deploy orchestrator \
           --image=europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator:latest \
@@ -29,11 +27,7 @@ steps:
           --allow-unauthenticated \
           --port=8080 \
           --project=recava-agent-audit \
-          --update-secrets=\
-OPENAI_API_KEY=OPENAI_API_KEY:latest,\
-ORCHESTRATOR_ASSISTANT_ID=ORCHESTRATOR_ASSISTANT_ID:latest,\
-ASISTENTE_ID=ASISTENTE_ID:latest,\
-AUDITOR_ID=AUDITOR_ID:latest \
+          --update-secrets= OPENAI_API_KEY=OPENAI_API_KEY:latest,ORCHESTRATOR_ASSISTANT_ID=ORCHESTRATOR_ASSISTANT_ID:latest,ASISTENTE_ID=ASISTENTE_ID:latest,AUDITOR_ID=AUDITOR_ID:latest \
           --timeout=300s \
           --concurrency=80 \
           --cpu=1 \
@@ -49,9 +43,3 @@ options:
 # ya que se optó por el montaje directo de secretos por Cloud Run.
 # Si la necesitas por alguna otra razón, asegúrate de que su indentación sea correcta
 # y que esté al mismo nivel que 'steps', 'images', 'options'.
-# Ejemplo (si fuera necesaria):
-# availableSecrets:
-#   secretManager:
-#     - versionName: projects/520199812528/secrets/OPENAI_API_KEY/versions/latest
-#       env: _OPENAI_API_KEY
-#     # ... otros secretos
