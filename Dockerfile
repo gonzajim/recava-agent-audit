@@ -51,28 +51,18 @@ COPY --from=builder --chown=appuser:appgroup /opt/venv /opt/venv
 WORKDIR /app
 
 # Copiar el código de la aplicación. Asumimos que tu archivo principal es app.py
-# Si se llama diferente (ej. main.py), ajusta el COPY y el CMD.
 COPY --chown=appuser:appgroup app.py .
 # Si tienes otros archivos/directorios que tu app necesita (ej. plantillas, estáticos), cópialos también.
-# COPY --chown=appuser:appgroup templates/ templates/
-# COPY --chown=appuser:appgroup static/ static/
 
 USER appuser
 
 # Exponer el puerto en el que Gunicorn escuchará (coincide con $PORT)
-EXPOSE 8080
+EXPOSE 8080 # Este valor es el que Cloud Run usará para PORT si no se especifica en la definición del servicio
 
 # Healthcheck para Cloud Run
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
 # Comando para ejecutar la aplicación Flask con Gunicorn
-# Asegúrate de que "app:app" coincida con tu_nombre_de_archivo:nombre_de_instancia_flask
-# Ejemplo: si tu archivo es mi_app.py y la instancia es flask_app = Flask(__name__), usa "mi_app:flask_app"
-CMD ["/opt/venv/bin/gunicorn", "app:app", \
-     "--bind", "0.0.0.0:${PORT}", \
-     "--workers", "4", \
-     # "--worker-class", "sync", # Gunicorn usa 'sync' por defecto para WSGI
-     "--timeout", "120", \
-     "--access-logfile", "-", \
-     "--error-logfile", "-"]
+# Usamos "sh -c" para permitir la expansión de la variable de entorno $PORT
+CMD ["sh", "-c", "/opt/venv/bin/gunicorn app:app --bind \"0.0.0.0:${PORT}\" --workers 4 --timeout 120 --access-logfile - --error-logfile -"]
