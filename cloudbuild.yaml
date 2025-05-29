@@ -1,15 +1,4 @@
-substitutions: {} # anula cualquier substitutions heredada
-
-availableSecrets:
-  secretManager:
-    - versionName: projects/520199812528/secrets/OPENAI_API_KEY/versions/latest
-      env: _OPENAI_API_KEY # Mapeado a la variable de entorno _OPENAI_API_KEY en el build step
-    - versionName: projects/520199812528/secrets/ORCHESTRATOR_ASSISTANT_ID/versions/latest
-      env: _ORCHESTRATOR_ASSISTANT_ID # Mapeado a _ORCHESTRATOR_ASSISTANT_ID
-    - versionName: projects/520199812528/secrets/ASISTENTE_ID/versions/latest
-      env: _ASISTENTE_ID # Mapeado a _ASISTENTE_ID
-    - versionName: projects/520199812528/secrets/AUDITOR_ID/versions/latest
-      env: _AUDITOR_ID # Mapeado a _AUDITOR_ID
+substitutions: {}
 
 steps:
   # 1) Build la imagen del contenedor
@@ -20,27 +9,31 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator:latest']
 
-  # 3) Deploy a Cloud Run
+  # 3) Deploy a Cloud Run, configurando los secretos para que Cloud Run los monte
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
-    secretEnv:
-      - _OPENAI_API_KEY
-      - _ORCHESTRATOR_ASSISTANT_ID
-      - _ASISTENTE_ID
-      - _AUDITOR_ID
     args:
       - -c
       - |
-        echo "DEBUG_BUILD_STEP: _OPENAI_API_KEY is [$_OPENAI_API_KEY]"
-        echo "DEBUG_BUILD_STEP: _ORCHESTRATOR_ASSISTANT_ID is [$_ORCHESTRATOR_ASSISTANT_ID]"
-        # ... (línea original de gcloud run deploy) ...
+        # Asegúrate de que esta línea y las siguientes estén indentadas un nivel más
+        # que la línea con el pipe "|".
+        echo "DEBUG_BUILD_STEP (Project Number Test): _OPENAI_API_KEY is [$_OPENAI_API_KEY]"
+        echo "DEBUG_BUILD_STEP (Project Number Test): _ORCHESTRATOR_ASSISTANT_ID is [$_ORCHESTRATOR_ASSISTANT_ID]"
+        echo "DEBUG_BUILD_STEP (Project Number Test): _ASISTENTE_ID is [$_ASISTENTE_ID]"
+        echo "DEBUG_BUILD_STEP (Project Number Test): _AUDITOR_ID is [$_AUDITOR_ID]"
+
         gcloud run deploy orchestrator \
           --image=europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator:latest \
           --region=europe-west1 \
           --platform=managed \
           --allow-unauthenticated \
           --port=8080 \
-          --set-env-vars="OPENAI_API_KEY=$_OPENAI_API_KEY,ORCHESTRATOR_ASSISTANT_ID=$_ORCHESTRATOR_ASSISTANT_ID,ASISTENTE_ID=$_ASISTENTE_ID,AUDITOR_ID=$_AUDITOR_ID" \
+          --project=recava-agent-audit \
+          --update-secrets=\
+OPENAI_API_KEY=OPENAI_API_KEY:latest,\
+ORCHESTRATOR_ASSISTANT_ID=ORCHESTRATOR_ASSISTANT_ID:latest,\
+ASISTENTE_ID=ASISTENTE_ID:latest,\
+AUDITOR_ID=AUDITOR_ID:latest \
           --timeout=300s \
           --concurrency=80 \
           --cpu=1 \
@@ -51,3 +44,14 @@ images:
 
 options:
   defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
+
+# La sección 'availableSecrets' fue eliminada en la versión anterior,
+# ya que se optó por el montaje directo de secretos por Cloud Run.
+# Si la necesitas por alguna otra razón, asegúrate de que su indentación sea correcta
+# y que esté al mismo nivel que 'steps', 'images', 'options'.
+# Ejemplo (si fuera necesaria):
+# availableSecrets:
+#   secretManager:
+#     - versionName: projects/520199812528/secrets/OPENAI_API_KEY/versions/latest
+#       env: _OPENAI_API_KEY
+#     # ... otros secretos
