@@ -1,37 +1,60 @@
-substitutions: {}          # anula cualquier substitutions heredada
+substitutions: {} # anula cualquier substitutions heredada
 
 availableSecrets:
   secretManager:
     - versionName: projects/recava-agent-audit/secrets/OPENAI_API_KEY/versions/latest
-      env: _OPENAI_API_KEY          # ← guion bajo
+      env: _OPENAI_API_KEY # Se usará como OPENAI_API_KEY en Cloud Run
+    - versionName: projects/recava-agent-audit/secrets/ORCHESTRATOR_ASSISTANT_ID/versions/latest
+      env: _ORCHESTRATOR_ASSISTANT_ID # Se usará como ORCHESTRATOR_ASSISTANT_ID
     - versionName: projects/recava-agent-audit/secrets/ASISTENTE_ID/versions/latest
-      env: _ASISTENTE_ID
+      env: _ASISTENTE_ID # Se usará como ASISTENTE_ID
     - versionName: projects/recava-agent-audit/secrets/AUDITOR_ID/versions/latest
-      env: _AUDITOR_ID
+      env: _AUDITOR_ID # Se usará como AUDITOR_ID
 
 steps:
-  # 1) Build
+  # 1) Build la imagen del contenedor
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build','-t','europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator','.']
+    args: ['build', '-t', 'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator:latest', '.']
+    # Añadido :latest tag por claridad, puedes usar $SHORT_SHA o $TAG_NAME si lo prefieres
 
-  # 2) Push
+  # 2) Push la imagen a Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push','europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator']
+    args: ['push', 'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator:latest']
 
-  # 3) Deploy
+  # 3) Deploy a Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
-    secretEnv:       # ← usa los nombres con _
+    secretEnv: # Las variables de entorno disponibles para este paso de build
       - _OPENAI_API_KEY
+      - _ORCHESTRATOR_ASSISTANT_ID
       - _ASISTENTE_ID
       - _AUDITOR_ID
     args:
       - -c
       - |
-        gcloud run deploy orchestrator --image=europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator --region=europe-west1 --platform=managed --allow-unauthenticated --set-env-vars OPENAI_API_KEY=$_OPENAI_API_KEY,ASISTENTE_ID=$_ASISTENTE_ID,AUDITOR_ID=$_AUDITOR_ID
+        gcloud run deploy orchestrator \
+          --image=europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator:latest \
+          --region=europe-west1 \
+          --platform=managed \
+          --allow-unauthenticated \
+          --port=8080 \
+          --set-env-vars="OPENAI_API_KEY=$_OPENAI_API_KEY,ORCHESTRATOR_ASSISTANT_ID=$_ORCHESTRATOR_ASSISTANT_ID,ASISTENTE_ID=$_ASISTENTE_ID,AUDITOR_ID=$_AUDITOR_ID" \
+          --timeout=300s \
+          --concurrency=80 \
+          --cpu=1 \
+          --memory=512Mi \
+          # Considera ajustar --min-instances y --max-instances según tus necesidades
+          # --min-instances=0 \
+          # --max-instances=10 \
+          # Para habilitar el nuevo health check de HTTP (si tu gcloud es suficientemente nuevo)
+          # Si no, Cloud Run usará el health check de inicio de TCP por defecto en el puerto del contenedor.
+          # El HEALTHCHECK del Dockerfile es usado por Docker, pero Cloud Run también tiene sus propias comprobaciones.
+          # --set-startup-cpu-boost \ # Para arranques más rápidos
+          # --update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest,ORCHESTRATOR_ASSISTANT_ID=ORCHESTRATOR_ASSISTANT_ID:latest,... # Alternativa a set-env-vars para secretos
 
 images:
-  - 'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator'
+  - 'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator:latest'
 
 options:
   defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
+  # machineType: 'E2_HIGHCPU_2' # Opcional: si necesitas más CPU/memoria para el build

@@ -1,5 +1,14 @@
-### Prueba Orchestrador
-POST https://orchestrator-520199812528.europe-west1.run.app/orchestrate
+POST http://127.0.0.1:5000/chat
 Content-Type: application/json
+{
+    "message": "Hola, me gustaría iniciar una auditoría de sostenibilidad."
+}
 
-{ "input": "¿Cuál es el estado actual de la auditoría de sostenibilidad?" }
+### Siguiente solicitud (después de obtener un thread_id)
+# POST http://127.0.0.1:5000/chat
+# Content-Type: application/json
+#
+# {
+# "message": "¿Cuál es el principal objetivo de las normas GRI?",
+# "thread_id": "thread_pega_aqui_el_thread_id_de_la_respuesta_anterior"
+# }
