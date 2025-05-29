@@ -57,7 +57,8 @@ COPY --chown=appuser:appgroup app.py .
 USER appuser
 
 # Exponer el puerto en el que Gunicorn escuchará (coincide con $PORT)
-EXPOSE 8080 # Este valor es el que Cloud Run usará para PORT si no se especifica en la definición del servicio
+EXPOSE 8080 
+# Este valor es el que Cloud Run usará para PORT si no se especifica en la definición del servicio
 
 # Healthcheck para Cloud Run
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
