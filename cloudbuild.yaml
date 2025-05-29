@@ -2,13 +2,13 @@ substitutions: {} # anula cualquier substitutions heredada
 
 availableSecrets:
   secretManager:
-    - versionName: projects/recava-agent-audit/secrets/OPENAI_API_KEY/versions/latest
+    - versionName: projects/520199812528/secrets/OPENAI_API_KEY/versions/latest
       env: _OPENAI_API_KEY # Mapeado a la variable de entorno _OPENAI_API_KEY en el build step
-    - versionName: projects/recava-agent-audit/secrets/ORCHESTRATOR_ASSISTANT_ID/versions/latest
+    - versionName: projects/520199812528/secrets/ORCHESTRATOR_ASSISTANT_ID/versions/latest
       env: _ORCHESTRATOR_ASSISTANT_ID # Mapeado a _ORCHESTRATOR_ASSISTANT_ID
-    - versionName: projects/recava-agent-audit/secrets/ASISTENTE_ID/versions/latest
+    - versionName: projects/520199812528/secrets/ASISTENTE_ID/versions/latest
       env: _ASISTENTE_ID # Mapeado a _ASISTENTE_ID
-    - versionName: projects/recava-agent-audit/secrets/AUDITOR_ID/versions/latest
+    - versionName: projects/520199812528/secrets/AUDITOR_ID/versions/latest
       env: _AUDITOR_ID # Mapeado a _AUDITOR_ID
 
 steps:
