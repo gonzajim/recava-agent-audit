@@ -5,11 +5,29 @@
 
 ### Endpoint del Orquestador: /chat
 # Primera solicitud (creará un nuevo hilo en el servidor)
-POST {{baseUrl}}/chat
+POST {{baseUrl}}/chat_auditor
 Content-Type: application/json
 
 {
     "message": "Hola, me gustaría iniciar una auditoría de sostenibilidad."
+}
+
+### Endpoint del Orquestador: /chat
+# Segunda solicitud 
+POST {{baseUrl}}/chat_auditor
+Content-Type: application/json
+
+{
+    "message": "Soy un hotel de Ferrol con 60 empleados. Qué debo hacer?"
+}
+
+### Endpoint del Orquestador: /chat
+# Segunda solicitud 
+POST {{baseUrl}}/chat_auditor
+Content-Type: application/json
+
+{
+    "message": "Si. Vamos a comenzar."
 }
 
 ### Endpoint del Orquestador: /chat (con thread_id existente)
@@ -24,7 +42,7 @@ Content-Type: application/json
 
 ### Endpoint del Asistente de Sostenibilidad Directo: /preguntar_asistente_sostenibilidad
 # Primera solicitud (creará un nuevo hilo para este asistente)
-POST {{baseUrl}}/preguntar_asistente_sostenibilidad
+POST {{baseUrl}}/chat_assistant
 Content-Type: application/json
 
 {
