@@ -2,8 +2,8 @@ import os
 import time
 import json
 from flask import Flask, request, jsonify
-import openai # <--- Importar openai para excepciones específicas
-from openai import OpenAI # Mantener esta importación también
+import openai
+from openai import OpenAI
 import logging
 from google.cloud import firestore
 
@@ -49,8 +49,8 @@ app.logger.info("Environment variables loaded.")
 try:
     client = OpenAI(
         api_key=OPENAI_API_KEY,
-        timeout=30.0, # Timeout de conexión y lectura en segundos (ej. 30s)
-        max_retries=2  # Número de reintentos automáticos
+        timeout=30.0, 
+        max_retries=2
     )
     app.logger.info("OpenAI client initialized successfully with timeout and retries.")
 except Exception as e:
@@ -70,12 +70,11 @@ def store_conversation_turn(thread_id: str, user_message: str, assistant_respons
     if not user_message and not assistant_response:
         app.logger.warning(f"Firestore: Skipping storage for thread {thread_id} from {endpoint_source} due to both user_message and assistant_response being empty.")
         return
-
     collection_name = "audit_trail"
     try:
         doc_ref = db.collection(collection_name).document()
         data_to_store = {
-            'thread_id': thread_id if thread_id else "unknown_thread", # Manejar thread_id None
+            'thread_id': thread_id if thread_id else "unknown_thread",
             'user_message': user_message if user_message is not None else "",
             'assistant_response': assistant_response if assistant_response is not None else "",
             'endpoint_source': endpoint_source,
@@ -85,77 +84,136 @@ def store_conversation_turn(thread_id: str, user_message: str, assistant_respons
             data_to_store['run_id'] = run_id
         if assistant_name:
             data_to_store['assistant_name'] = assistant_name
-        
         doc_ref.set(data_to_store)
         app.logger.info(f"Firestore: Stored conversation turn for thread {data_to_store['thread_id']} from {endpoint_source} in document {doc_ref.id}.")
     except Exception as e:
         app.logger.error(f"Firestore: Failed to store conversation turn for thread {thread_id}. Error: {e}", exc_info=True)
 
-# --- Tool Implementation Functions ---
-def execute_sustainability_assistant_tool(query: str, thread_id: str) -> str:
-    app.logger.info(f"Orchestrator's tool executing Sustainability Assistant for thread {thread_id} with query: \"{query}\"")
+# --- Tool Implementation Functions (MODIFICADAS PARA USAR HILOS TEMPORALES) ---
+def execute_sustainability_assistant_tool(query: str, original_thread_id: str) -> str:
+    # original_thread_id es el del Orquestador, no se usa aquí directamente para el run del sub-asistente.
+    app.logger.info(f"Orchestrator's tool: Executing Sustainability Assistant with query: \"{query}\" (Original Thread: {original_thread_id})")
+    temp_thread = None
     try:
+        # 1. Crear hilo temporal
+        temp_thread = client.beta.threads.create()
+        temp_thread_id = temp_thread.id
+        app.logger.info(f"Tool: Created temporary thread {temp_thread_id} for Sustainability Assistant.")
+
+        # 2. Añadir mensaje al hilo temporal (la consulta del usuario)
+        client.beta.threads.messages.create(
+            thread_id=temp_thread_id,
+            role="user",
+            content=query
+        )
+        app.logger.info(f"Tool: Added query to temporary thread {temp_thread_id}.")
+
+        # 3. Crear y sondear run en el hilo temporal para el Asistente de Sostenibilidad
+        app.logger.info(f"Tool: Creating run on temp thread {temp_thread_id} for Sustainability Assistant ({ASISTENTE_ID}).")
         run = client.beta.threads.runs.create_and_poll(
-            thread_id=thread_id,
+            thread_id=temp_thread_id,
             assistant_id=ASISTENTE_ID,
-            instructions=f"Address the following sustainability query based on your knowledge: \"{query}\". Provide a concise and focused answer."
+            instructions="Please address the user's query (last message in this thread) based on your knowledge. Provide a concise and focused answer."
         )
+
+        response_text = f"Error: Sustainability Assistant run did not complete successfully (status: {run.status})."
         if run.status == 'completed':
-            messages = client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id, order='desc', limit=1)
+            messages = client.beta.threads.messages.list(thread_id=temp_thread_id, run_id=run.id, order='desc', limit=1)
             if messages.data and messages.data[0].content:
                 response_text = "".join([content_block.text.value for content_block in messages.data[0].content if content_block.type == 'text'])
-                app.logger.info(f"Sustainability Assistant (via tool) response for thread {thread_id}: \"{response_text[:100]}...\"")
-                return response_text
+                app.logger.info(f"Tool: Sustainability Assistant response from temp thread {temp_thread_id}: \"{response_text[:100]}...\"")
             else:
-                app.logger.warning(f"Sustainability Assistant (via tool) for thread {thread_id}: No message content found.")
-                return "The Sustainability Assistant provided no textual response for this query."
+                app.logger.warning(f"Tool: Sustainability Assistant on temp thread {temp_thread_id}: No message content found.")
+                response_text = "The Sustainability Assistant provided no textual response for this query."
         else:
-            app.logger.error(f"Sustainability Assistant (via tool) for thread {thread_id}: Run failed status {run.status}. Details: {run.last_error or 'N/A'}")
-            return f"Error interacting with Sustainability Assistant via tool: {run.status}"
-    except Exception as e:
-        app.logger.error(f"Exception in execute_sustainability_assistant_tool for thread {thread_id}: {e}", exc_info=True)
-        return f"An error occurred while the Orchestrator's tool was calling the Sustainability Assistant: {str(e)}"
+            app.logger.error(f"Tool: Sustainability Assistant run on temp thread {temp_thread_id} failed. Status: {run.status}. Details: {run.last_error or 'N/A'}")
+        
+        return response_text
 
-def execute_auditor_assistant_tool(task: str, thread_id: str) -> str:
-    app.logger.info(f"Orchestrator's tool executing Auditor Assistant for thread {thread_id} with task: \"{task}\"")
+    except Exception as e:
+        app.logger.error(f"Tool: Exception in execute_sustainability_assistant_tool: {e}", exc_info=True)
+        return f"An error occurred while processing your sustainability query: {str(e)}"
+    finally:
+        # 5. Eliminar hilo temporal
+        if temp_thread:
+            try:
+                client.beta.threads.delete(temp_thread.id)
+                app.logger.info(f"Tool: Deleted temporary thread {temp_thread.id} for Sustainability Assistant.")
+            except Exception as delete_err:
+                app.logger.error(f"Tool: Failed to delete temporary thread {temp_thread.id}. Error: {delete_err}", exc_info=True)
+
+
+def execute_auditor_assistant_tool(task: str, original_thread_id: str) -> str:
+    app.logger.info(f"Orchestrator's tool: Executing Auditor Assistant with task: \"{task}\" (Original Thread: {original_thread_id})")
+    temp_thread = None
     try:
-        # Aquí es donde ocurría el error "Thread already has an active run" si el run del Orquestador
-        # no había liberado el hilo. Esta arquitectura requiere una solución más avanzada si se mantiene
-        # la llamada a otro Asistente dentro de una tool call en el mismo hilo.
-        # Por ahora, se asume que este problema se manejará o que el contexto del error es diferente.
+        # 1. Crear hilo temporal
+        temp_thread = client.beta.threads.create()
+        temp_thread_id = temp_thread.id
+        app.logger.info(f"Tool: Created temporary thread {temp_thread_id} for Auditor Assistant.")
+
+        # 2. Determinar instrucción y añadir mensaje si es necesario
+        instruction_for_auditor = ""
+        if task.startswith("process_user_answer:"):
+            user_answer = task.split("process_user_answer:", 1)[1].strip()
+            client.beta.threads.messages.create(
+                thread_id=temp_thread_id,
+                role="user", # Simula que el usuario dio esta respuesta al auditor
+                content=user_answer 
+            )
+            app.logger.info(f"Tool: Added user's answer to temporary thread {temp_thread_id} for Auditor.")
+            instruction_for_auditor = "The user has provided an answer in the last message of this thread. Please process it and provide the next audit question or relevant feedback."
+        elif task == "get_next_audit_question":
+            instruction_for_auditor = "Please provide the next audit question according to the audit protocol."
+        else:
+            # Tarea desconocida o no manejada específicamente, pasarla tal cual
+            instruction_for_auditor = f"Please perform the following task: \"{task}\""
+            app.logger.warning(f"Tool: Auditor Assistant received an unspecific task structure: \"{task}\". Passing as general instruction.")
+
+        # 3. Crear y sondear run en el hilo temporal para el Asistente Auditor
+        app.logger.info(f"Tool: Creating run on temp thread {temp_thread_id} for Auditor Assistant ({AUDITOR_ID}). Instruction: {instruction_for_auditor}")
         run = client.beta.threads.runs.create_and_poll(
-            thread_id=thread_id,
+            thread_id=temp_thread_id,
             assistant_id=AUDITOR_ID,
-            instructions=f"Perform the following audit task based on the conversation history: \"{task}\". Ensure your response is relevant to the audit process."
+            instructions=instruction_for_auditor
         )
+        
+        response_text = f"Error: Auditor Assistant run did not complete successfully (status: {run.status})."
         if run.status == 'completed':
-            messages = client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id, order='desc', limit=1)
+            messages = client.beta.threads.messages.list(thread_id=temp_thread_id, run_id=run.id, order='desc', limit=1)
             if messages.data and messages.data[0].content:
                 response_text = "".join([content_block.text.value for content_block in messages.data[0].content if content_block.type == 'text'])
-                app.logger.info(f"Auditor Assistant (via tool) response for thread {thread_id}: \"{response_text[:100]}...\"")
-                return response_text
+                app.logger.info(f"Tool: Auditor Assistant response from temp thread {temp_thread_id}: \"{response_text[:100]}...\"")
             else:
-                app.logger.warning(f"Auditor Assistant (via tool) for thread {thread_id}: No message content found.")
-                return "The Auditor Assistant provided no textual response for this task."
+                app.logger.warning(f"Tool: Auditor Assistant on temp thread {temp_thread_id}: No message content found.")
+                response_text = "The Auditor Assistant provided no textual response for this task."
         else:
-            app.logger.error(f"Auditor Assistant (via tool) for thread {thread_id}: Run failed status {run.status}. Details: {run.last_error or 'N/A'}")
-            return f"Error interacting with Auditor Assistant via tool: {run.status}"
-    except openai.BadRequestError as e: # Capturar específicamente el error de "run activo"
-        app.logger.error(f"BadRequestError in execute_auditor_assistant_tool for thread {thread_id}: {e}. This might be due to an existing active run.", exc_info=True)
-        # Devolver un mensaje de error específico para que el Orquestador pueda (potencialmente) manejarlo
-        return f"Error: Could not execute auditor task due to an existing active run on the thread. Please try again shortly. Details: {str(e)}"
-    except Exception as e:
-        app.logger.error(f"Exception in execute_auditor_assistant_tool for thread {thread_id}: {e}", exc_info=True)
-        return f"An error occurred while the Orchestrator's tool was calling the Auditor Assistant: {str(e)}"
+            app.logger.error(f"Tool: Auditor Assistant run on temp thread {temp_thread_id} failed. Status: {run.status}. Details: {run.last_error or 'N/A'}")
 
-# --- Orchestrator API Endpoint ---
+        return response_text
+
+    except Exception as e:
+        app.logger.error(f"Tool: Exception in execute_auditor_assistant_tool: {e}", exc_info=True)
+        return f"An error occurred while processing your audit task: {str(e)}"
+    finally:
+        # 5. Eliminar hilo temporal
+        if temp_thread:
+            try:
+                client.beta.threads.delete(temp_thread.id)
+                app.logger.info(f"Tool: Deleted temporary thread {temp_thread.id} for Auditor Assistant.")
+            except Exception as delete_err:
+                app.logger.error(f"Tool: Failed to delete temporary thread {temp_thread.id}. Error: {delete_err}", exc_info=True)
+
+# --- Orchestrator API Endpoint (/chat_auditor) ---
+# (La lógica interna de chat_with_orchestrator no necesita cambiar,
+# ya que las funciones de herramienta ahora manejan la interacción con sub-asistentes de forma aislada)
 @app.route('/chat_auditor', methods=['POST'])
 def chat_with_orchestrator():
     endpoint_name = "/chat_auditor"
     app.logger.info(f"Received request for {endpoint_name} (Orchestrator) endpoint from {request.remote_addr}")
     user_message_content = None 
     thread_id = None
-    data_from_request = None # Para usar en el bloque except
+    data_from_request = None 
     assistant_response_for_storage = "Error or no response generated by Orchestrator." 
     current_run_id_for_storage = None
 
@@ -195,7 +253,6 @@ def chat_with_orchestrator():
                 app.logger.info(f"{endpoint_name}: Created new thread {thread_id} after failing to retrieve {original_thread_id_if_new_created}.")
             except Exception as e:
                 app.logger.error(f"{endpoint_name}: Failed to retrieve existing Orchestrator thread {thread_id}: {e}", exc_info=True)
-                # No guardar en Firestore aquí ya que el thread_id podría ser el problema
                 return jsonify({"error": f"Invalid or inaccessible thread_id for Orchestrator: {thread_id}", "details": str(e)}), 400
 
         client.beta.threads.messages.create(
@@ -214,14 +271,14 @@ def chat_with_orchestrator():
         app.logger.info(f"{endpoint_name}: Orchestrator Run {current_run.id} created for thread {thread_id}. Initial status: {current_run.status}")
         
         polling_attempts = 0
-        max_polling_attempts_before_action = 60 # ~60 segundos
+        max_polling_attempts_before_action = 60 
         
         while current_run.status in ['queued', 'in_progress']:
             polling_attempts += 1
             if polling_attempts > max_polling_attempts_before_action:
                 app.logger.warning(f"{endpoint_name}: Orchestrator Run {current_run.id} on thread {thread_id} timed out waiting for 'requires_action' or completion. Last status: {current_run.status}")
                 assistant_response_for_storage = f"OpenAI run (Orchestrator) timed out before action or completion. Status: {current_run.status}"
-                try: # Intentar cancelar el run
+                try: 
                     app.logger.info(f"{endpoint_name}: Attempting to cancel run {current_run.id} due to polling timeout.")
                     client.beta.threads.runs.cancel(thread_id=thread_id, run_id=current_run.id)
                     app.logger.info(f"{endpoint_name}: Successfully cancelled run {current_run.id}.")
@@ -253,7 +310,9 @@ def chat_with_orchestrator():
                         if function_name == "invoke_sustainability_assistant":
                             output = execute_sustainability_assistant_tool(query=arguments.get("query"), thread_id=thread_id)
                         elif function_name == "invoke_auditor_assistant":
-                            output = execute_auditor_assistant_tool(task=arguments.get("task"), thread_id=thread_id)
+                            # Pasamos el thread_id original del orquestador por si fuera necesario para logging o contexto futuro,
+                            # aunque la función de herramienta ahora crea su propio hilo temporal.
+                            output = execute_auditor_assistant_tool(task=arguments.get("task"), original_thread_id=thread_id)
                         else:
                             app.logger.warning(f"{endpoint_name}: Orchestrator Run {current_run.id} requested unknown tool function: {function_name}")
                             output = f"Error: Unknown tool function '{function_name}' requested by Orchestrator."
@@ -296,7 +355,7 @@ def chat_with_orchestrator():
             store_conversation_turn(thread_id, user_message_content, assistant_response_for_storage, endpoint_name, current_run.id, "Orchestrator")
             return jsonify({"response": assistant_response, "thread_id": thread_id, "run_id": current_run.id, "run_status": current_run.status})
         
-        else: # Otros estados finales como 'failed', 'cancelled', 'expired'
+        else: 
             app.logger.error(f"{endpoint_name}: Orchestrator Run {current_run.id} on thread {thread_id} ended with unhandled status: {current_run.status}. Last error: {current_run.last_error}")
             error_details = str(current_run.last_error.message) if current_run.last_error else "No specific error details provided by API for Orchestrator run."
             assistant_response_for_storage = f"Orchestrator Run ended with status: {current_run.status}. Details: {error_details}"
@@ -305,14 +364,16 @@ def chat_with_orchestrator():
 
     except Exception as e:
         app.logger.error(f"{endpoint_name}: An unexpected error occurred in Orchestrator endpoint: {e}", exc_info=True)
-        # Intentar obtener thread_id de data_from_request si existe, sino del thread_id ya definido (si se llegó a ese punto)
         _thread_id_for_except_log = data_from_request.get('thread_id') if data_from_request else thread_id
-        if user_message_content is not None : # Solo guardar si tenemos el mensaje del usuario
+        if user_message_content is not None : 
              store_conversation_turn(_thread_id_for_except_log, user_message_content, f"Unhandled API Exception: {str(e)}", endpoint_name, current_run_id_for_storage, "OrchestratorException")
         return jsonify({"error": f"An internal server error occurred in Orchestrator endpoint: {str(e)}", "thread_id": _thread_id_for_except_log}), 500
 
 
-# --- Endpoint para el Asistente de Sostenibilidad Directo ---
+# --- Endpoint para el Asistente de Sostenibilidad Directo (/chat_assistant) ---
+# (La lógica interna de preguntar_asistente_sostenibilidad no necesita cambios importantes
+# para el manejo de hilos temporales, ya que ya usa create_and_poll de forma aislada.
+# Solo se han añadido las mejoras de manejo de thread_id no encontrado y logging)
 @app.route('/chat_assistant', methods=['POST'])
 def preguntar_asistente_sostenibilidad():
     endpoint_name = "/chat_assistant"
@@ -371,7 +432,6 @@ def preguntar_asistente_sostenibilidad():
         )
         sustainability_run_id_for_storage = sustainability_run.id
         app.logger.info(f"{endpoint_name}: Sustainability Assistant Run {sustainability_run_id_for_storage} on thread {thread_id} completed with status: {sustainability_run.status}")
-
 
         if sustainability_run.status == 'completed':
             messages = client.beta.threads.messages.list(thread_id=thread_id, order='desc', limit=10)
