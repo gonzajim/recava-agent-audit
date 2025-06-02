@@ -427,7 +427,7 @@ def chat_with_sustainability_expert():
         response_payload = {"error": f"An internal server error occurred: {str(e)}", "thread_id": _thread_id_for_except_log}
         app.logger.info(f"{endpoint_name}: Responding with JSON (exception): {json.dumps(response_payload)}")
         return jsonify(response_payload), 500
-
+ 
 
 # --- Health Check Endpoint ---
 @app.route('/health', methods=['GET'])
