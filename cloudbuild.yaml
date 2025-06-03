@@ -1,25 +1,48 @@
 substitutions: {}
 
 steps:
-  # 1) Build la imagen del contenedor
+  # 1) Construir la imagen del contenedor
+  # Este paso ejecuta 'docker build'. Es CRUCIAL que tu Dockerfile
+  # en el directorio actual ('.') incluya los pasos para instalar
+  # las dependencias de Python desde tu archivo 'requirements.txt'.
+  #
+  # Ejemplo de lo que debería estar en tu Dockerfile:
+  #   # ... (otras directivas como FROM python:3.x-slim)
+  #   WORKDIR /app
+  #   COPY requirements.txt ./
+  #   RUN pip install --no-cache-dir -r requirements.txt  # <-- ESTA LÍNEA INSTALA LAS DEPENDENCIAS
+  #   COPY . .
+  #   # ... (otras directivas como CMD o ENTRYPOINT)
+  #
+  # Además, asegúrate de que 'Flask-CORS' (o 'flask-cors') esté listado
+  # en tu archivo 'requirements.txt'.
+  #
+  # El error 'ModuleNotFoundError: No module named 'flask_cors'' que estás viendo
+  # significa que Flask-CORS no se instaló en la imagen durante este paso de 'docker build',
+  # porque tu Dockerfile no lo hizo o 'requirements.txt' no lo contenía.
   - name: 'gcr.io/cloud-builders/docker'
+    id: 'Build-Docker-Image' # ID añadido para claridad
     args: ['build', '-t', 'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator:latest', '.']
 
-  # 2) Push la imagen a Artifact Registry
+  # 2) Empujar la imagen a Artifact Registry
+  # Este paso depende de que la imagen se haya construido correctamente en el paso anterior.
   - name: 'gcr.io/cloud-builders/docker'
+    id: 'Push-to-Artifact-Registry' # ID añadido para claridad
     args: ['push', 'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator:latest']
+    waitFor: ['Build-Docker-Image'] # Espera explícitamente a que la compilación termine
 
-  # 3) Deploy a Cloud Run, configurando los secretos para que Cloud Run los monte
+  # 3) Desplegar a Cloud Run
+  # Este paso despliega la imagen que fue construida y empujada.
+  # Si la imagen no tiene Flask-CORS instalado (debido a problemas en el paso 1),
+  # la aplicación fallará en tiempo de ejecución en Cloud Run, como has observado.
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'Deploy-to-Cloud-Run' # ID añadido para claridad
     entrypoint: bash
     args:
       - -c
       - |
-        # Asegúrate de que esta línea y las siguientes estén indentadas un nivel más
-        # que la línea con el pipe "|".
-        # Las líneas de echo para depuración han sido eliminadas para esta corrección,
-        # puedes volver a añadirlas si necesitas depurar el acceso a los secretos.
-
+        # Las siguientes líneas ejecutan el despliegue en Cloud Run.
+        # La configuración de secretos y otros parámetros de servicio están aquí.
         gcloud run deploy orchestrator \
           --image=europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator:latest \
           --region=europe-west1 \
@@ -32,6 +55,7 @@ steps:
           --concurrency=80 \
           --cpu=1 \
           --memory=512Mi
+    waitFor: ['Push-to-Artifact-Registry'] # Espera explícitamente a que el push termine
 
 images:
   - 'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator:latest'

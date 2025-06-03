@@ -5,3 +5,4 @@ python-dotenv>=0.19.0 # Para desarrollo local, no daña en producción
 httpx>=0.27.0 # Descomentar si es una dependencia directa de tu código o de openai
 openai-agents # Descomentar si lo estás usando explícitamente
 google-cloud-firestore>=2.5.0 # Base de datos
+Flask-CORS
