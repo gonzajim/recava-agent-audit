@@ -1,0 +1,10 @@
+{
+  "hosting": {
+    "public": ".", // Directorio actual
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ]
+  }
+}

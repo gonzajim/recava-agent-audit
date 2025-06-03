@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asistente de Auditoría en Sostenibilidad</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/lucide-react/0.294.0/lucide.min.js" rel="preload" as="script"> <!-- Para iconos -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5;
+        }
+        #chat-container {
+            width: 100%;
+            max-width: 800px;
+            height: calc(100vh - 120px); 
+            margin: 20px auto;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            background-color: #ffffff;
+        }
+        .chat-header {
+            background-color: #075e54;
+            color: white;
+            padding: 1rem;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;
+            text-align: center;
+        }
+        .chat-header h1 {
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        #chat-messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .message {
+            padding: 0.75rem 1rem;
+            border-radius: 10px;
+            max-width: 75%;
+            line-height: 1.5;
+            word-wrap: break-word; 
+        }
+        .user-message {
+            background-color: #dcf8c6;
+            align-self: flex-end;
+            border-bottom-right-radius: 0;
+        }
+        .assistant-message {
+            background-color: #f1f0f0;
+            align-self: flex-start;
+            border-bottom-left-radius: 0;
+        }
+        /* Estilos para el contenido HTML generado desde Markdown */
+        .assistant-message .main-assistant-text strong, 
+        .assistant-message .main-assistant-text b {
+            font-weight: 600; 
+            color: #1f2937; 
+        }
+        .assistant-message .main-assistant-text ul, 
+        .assistant-message .main-assistant-text ol {
+            margin-left: 1.5rem; 
+            margin-top: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .assistant-message .main-assistant-text ul { list-style-type: disc; }
+        .assistant-message .main-assistant-text ol { list-style-type: decimal; }
+        .assistant-message .main-assistant-text li { margin-bottom: 0.25rem; }
+        .assistant-message .main-assistant-text p { margin-bottom: 0.5rem; }
+        .assistant-message .main-assistant-text p:last-child { margin-bottom: 0; }
+
+        .source-chunks-container {
+            margin-top: 0.75rem;
+            border-top: 1px dashed #d1d5db;
+            padding-top: 0.75rem;
+        }
+        .source-chunk {
+            font-size: 0.75rem; 
+            color: #4b5563; 
+            background-color: #f9fafb; 
+            padding: 0.5rem 0.75rem;
+            border-radius: 6px;
+            margin-bottom: 0.5rem;
+            line-height: 1.4;
+        }
+        .source-chunk:last-child { margin-bottom: 0; }
+        .source-chunk strong { color: #111827; font-weight: 600; }
+        .source-chunk em { color: #6b7280; }
+
+        #input-area-wrapper { 
+            padding: 0.5rem 1rem 1rem 1rem; 
+            border-top: 1px solid #e0e0e0;
+            background-color: #f9f9f9;
+            border-bottom-left-radius: 12px;
+            border-bottom-right-radius: 12px;
+        }
+        #input-controls { 
+            display: flex;
+            align-items: center;
+        }
+        #user-input {
+            flex-grow: 1;
+            padding: 0.75rem;
+            border: 1px solid #ccc;
+            border-radius: 20px;
+            margin-right: 0.5rem;
+            font-size: 1rem;
+        }
+        #send-button, .mode-button-chat, #attach-file-button {
+            padding: 0.75rem 1.25rem;
+            background-color: #128c7e;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background-color 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #attach-file-button {
+            margin-right: 0.5rem;
+            padding: 0.6rem; 
+            width: 40px;
+            height: 40px;
+        }
+        #send-button:hover, .mode-button-chat:hover, #attach-file-button:hover {
+            background-color: #075e54;
+        }
+        #send-button:disabled {
+            background-color: #9dbfbc; 
+            cursor: not-allowed;
+        }
+        .mode-button-container { 
+            display: flex;
+            flex-direction: column; /* Apilados verticalmente */
+            align-items: center; /* Centrados */
+            gap: 0.75rem; /* Espacio entre botones */
+            margin-top: 0.75rem; 
+            margin-bottom: 0.5rem; 
+            width: 100%; /* Ocupar el ancho para centrar correctamente */
+        }
+        .mode-button-chat { 
+             width: 60%; /* Ancho de los botones */
+             max-width: 280px; /* Ancho máximo */
+             padding: 0.6rem 1.2rem; 
+             font-size: 0.95rem;
+        }
+
+        #file-preview-area {
+            font-size: 0.8rem;
+            color: #374151;
+            margin-top: 0.5rem;
+            padding: 0.5rem;
+            background-color: #e9e9e9;
+            border-radius: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        #file-preview-area button {
+            background: none;
+            border: none;
+            color: #ef4444; 
+            cursor: pointer;
+            padding: 0.2rem;
+        }
+
+        .typing-indicator {
+            font-style: italic;
+            color: #777;
+            padding: 0.5rem 1.5rem;
+            align-self: flex-start;
+        }
+
+        @media (max-width: 600px) {
+            #chat-container {
+                height: calc(100vh - 80px); 
+                margin: 0;
+                border-radius: 0; 
+            }
+            .chat-header, #input-area-wrapper {
+                border-radius: 0;
+            }
+            .chat-header h1 { font-size: 1.1rem; }
+            #chat-messages { padding: 1rem; }
+            .message { max-width: 85%; }
+            #input-area-wrapper { padding: 0.5rem; }
+            #user-input { padding: 0.6rem; font-size: 0.9rem; }
+            #send-button, .mode-button-chat, #attach-file-button { padding: 0.6rem 1rem; font-size: 0.9rem; }
+            #attach-file-button { width: 36px; height: 36px; padding: 0.5rem;}
+            .mode-button-container { 
+                /* flex-direction: column; ya está definido arriba, se mantiene */
+                align-items: center; 
+                gap: 0.75rem;
+            }
+            .mode-button-chat {
+                width: 80%; /* Ajustar ancho para móviles */
+                max-width: 280px; 
+            }
+        }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <div id="chat-container">
+        <div class="chat-header">
+            <h1>Asistente de Auditoría y Asesoría en Sostenibilidad</h1>
+        </div>
+        <div id="chat-messages"></div>
+        <div id="input-area-wrapper"> 
+            <div id="file-preview-area" class="hidden">
+                <span id="file-name-preview"></span>
+                <button id="remove-file-button" title="Eliminar archivo">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div id="input-controls">
+                <input type="file" id="file-input" class="hidden">
+                <button id="attach-file-button" title="Adjuntar archivo">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.49"></path></svg>
+                </button>
+                <input type="text" id="user-input" placeholder="Selecciona un modo para comenzar...">
+                <button id="send-button">Enviar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const chatMessages = document.getElementById('chat-messages');
+            const userInput = document.getElementById('user-input');
+            const sendButton = document.getElementById('send-button');
+            const inputAreaWrapper = document.getElementById('input-area-wrapper');
+            const fileInput = document.getElementById('file-input');
+            const attachFileButton = document.getElementById('attach-file-button');
+            const filePreviewArea = document.getElementById('file-preview-area');
+            const fileNamePreview = document.getElementById('file-name-preview');
+            const removeFileButton = document.getElementById('remove-file-button');
+
+            const AUDITOR_ENDPOINT = 'https://orchestrator-520199812528.europe-west1.run.app/chat_auditor';
+            const ADVISOR_ENDPOINT = 'https://orchestrator-520199812528.europe-west1.run.app/chat_assistant'; 
+            const GET_SOURCE_ENDPOINT = '/api/get_source_chunk'; 
+            const UPLOAD_FILE_ENDPOINT = '/api/upload_file_to_openai'; 
+
+            let currentMode = null; 
+            let currentThreadId = null;
+            let currentRunId = null; 
+            let selectedFile = null; 
+            let uploadedFileId = null; 
+            let modeButtonContainer = null; 
+
+            function initializeChat() {
+                console.log("Chat initialized. Waiting for mode selection.");
+                addAssistantMessageInternal("¡Hola! Somos tus auditores legales especializados en sostenibilidad empresarial y diligencia debida. Guiaremos el proceso de auditoría.<br>Elige el modo en el que quieres interactuar.", []);
+                
+                modeButtonContainer = document.createElement('div');
+                modeButtonContainer.classList.add('mode-button-container');
+                modeButtonContainer.innerHTML = `
+                    <button class="mode-button-chat" data-mode="auditor" title="Modo Auditor: En este modo el modelo te guiará a lo largo de un proceso de auditoría en modo pregunta-respuesta. Puedes preguntar dudas a lo largo del proceso y te las resolverá">Modo Auditor</button>
+                    <button class="mode-button-chat" data-mode="advisor" title="Modo Asesor: En este modo, el modelo resolverá tus dudas sobre Sostenibilidad. Pregunta lo que quieras o pídele que te redacte documentos relacionados con la materia.">Modo Asesor</button>
+                `;
+                if (chatMessages) chatMessages.appendChild(modeButtonContainer);
+
+                modeButtonContainer.querySelectorAll('.mode-button-chat').forEach(button => {
+                    button.addEventListener('click', handleModeSelection);
+                });
+
+                if(sendButton) {
+                    sendButton.disabled = true;
+                    userInput.placeholder = "Selecciona un modo para comenzar..."; 
+                }
+            }
+
+            function handleModeSelection(event) {
+                currentMode = event.target.dataset.mode;
+                console.log(`Mode selected: ${currentMode}`);
+                
+                if (modeButtonContainer) { 
+                    modeButtonContainer.remove();
+                    modeButtonContainer = null; 
+                }
+                
+                if(sendButton) sendButton.disabled = false; 
+                if(userInput) {
+                    userInput.value = ''; 
+                    userInput.focus();
+                }
+                currentThreadId = null; 
+                clearSelectedFile(); 
+                console.log("Thread ID reset for new mode.");
+
+                if (currentMode === 'auditor') {
+                    addAssistantMessageInternal("Has seleccionado el modo <strong>AUDITOR</strong>.<br>Voy a hacerte una batería de preguntas para comprobar el nivel de adecuación al estándar y al finalizar generaré un informe.<br>Comienza por contarme: nombre de la empresa, sector, tamaño y sedes de la empresa.", []);
+                    if(userInput) userInput.placeholder = "Nombre, sector, tamaño, sedes...";
+                } else if (currentMode === 'advisor') {
+                    addAssistantMessageInternal("Has seleccionado el modo <strong>ASESOR</strong>.<br>Puedes hacerme preguntas o pedirme consejo sobre temas de sostenibilidad y diligencia debida. ¿En qué puedo ayudarte hoy?", []);
+                    if(userInput) userInput.placeholder = "Escribe tu consulta de asesoría...";
+                }
+            }
+            
+            if (attachFileButton) {
+                attachFileButton.addEventListener('click', () => {
+                    if(fileInput) fileInput.click(); 
+                });
+            } else {
+                console.error("Attach file button not found");
+            }
+
+            if (fileInput) {
+                fileInput.addEventListener('change', (event) => {
+                    const file = event.target.files[0];
+                    if (file) {
+                        selectedFile = file;
+                        if(fileNamePreview) fileNamePreview.textContent = selectedFile.name;
+                        if(filePreviewArea) filePreviewArea.classList.remove('hidden');
+                        console.log("Archivo seleccionado:", selectedFile.name, selectedFile.type, selectedFile.size);
+                    }
+                    if(fileInput) fileInput.value = null; 
+                });
+            } else {
+                console.error("File input element not found");
+            }
+
+            if (removeFileButton) {
+                removeFileButton.addEventListener('click', clearSelectedFile);
+            } else {
+                console.error("Remove file button not found");
+            }
+
+            function clearSelectedFile() {
+                selectedFile = null;
+                uploadedFileId = null; 
+                if(fileNamePreview) fileNamePreview.textContent = '';
+                if(filePreviewArea) filePreviewArea.classList.add('hidden');
+                if(fileInput) fileInput.value = null; 
+                console.log("Archivo adjunto eliminado.");
+            }
+
+            async function simulateOrRealUploadFile(file) {
+                if (!file) return null;
+                addAssistantMessageInternal(`<i>Subiendo archivo ${file.name}... (Esto es una simulación. Necesitas implementar la subida real al backend y a OpenAI).</i>`, []);
+                return new Promise(resolve => {
+                    setTimeout(() => {
+                        const simulatedFileId = `sim_file_${Date.now()}`;
+                        console.log(`Simulación: Archivo "${file.name}" "subido". File ID: ${simulatedFileId}`);
+                        addAssistantMessageInternal(`<i>Archivo ${file.name} "procesado". (ID simulado: ${simulatedFileId}). Para funcionalidad real, implementa la subida al backend.</i>`, []);
+                        resolve(simulatedFileId);
+                    }, 1000);
+                });
+            }
+            
+            async function handleSendMessage() {
+                const messageText = userInput.value.trim();
+                if (!messageText && !selectedFile) { 
+                    console.log("No hay mensaje ni archivo para enviar.");
+                    return;
+                }
+
+                if (selectedFile && !uploadedFileId) {
+                    addMessageToChat({ type: 'system', text: `Procesando archivo ${selectedFile.name}...`}, 'system'); 
+                    uploadedFileId = await simulateOrRealUploadFile(selectedFile); 
+                    if (!uploadedFileId) {
+                        addMessageToChat({ type: 'system', text: `No se pudo procesar el archivo ${selectedFile.name}. Intenta enviar el mensaje sin él o prueba con otro archivo.`}, 'system'); 
+                        return; 
+                    }
+                }
+                
+                addUserMessage(messageText || `(Archivo adjunto: ${selectedFile ? selectedFile.name : 'Error al obtener nombre'})`); 
+                userInput.value = '';
+                showTypingIndicator();
+
+                let endpoint = '';
+                let payload = {
+                    message: messageText,
+                    thread_id: currentThreadId,
+                    attachments: uploadedFileId ? [{ file_id: uploadedFileId, tools: [{type: "file_search"}] }] : [],
+                };
+                
+                console.log("Payload a enviar (con posible file_id):", JSON.stringify(payload, null, 2));
+
+                if (currentMode === 'auditor') {
+                    endpoint = AUDITOR_ENDPOINT;
+                } else if (currentMode === 'advisor') {
+                    endpoint = ADVISOR_ENDPOINT;
+                } else {
+                    removeTypingIndicator();
+                    addAssistantMessageInternal("Error: No se ha seleccionado un modo válido.", []);
+                    console.error("Error: No valid mode selected for sending message.");
+                    clearSelectedFile(); 
+                    return;
+                }
+
+                try {
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', },
+                        body: JSON.stringify(payload)
+                    });
+                    console.log(`Response received. Status: ${response.status}, StatusText: ${response.statusText}`);
+                    removeTypingIndicator();
+
+                    if (!response.ok) {
+                        let errorData;
+                        let rawErrorResponse = "";
+                        try {
+                            const clonedResponse = response.clone();
+                            rawErrorResponse = await clonedResponse.text();
+                            console.error("Raw error response text:", rawErrorResponse);
+                            errorData = await response.json();
+                        } catch (e) {
+                            console.error("Failed to parse error response as JSON:", e);
+                            errorData = { error: "Error no JSON en la respuesta del servidor.", details: rawErrorResponse || `Status: ${response.status}` };
+                        }
+                        
+                        console.error('Error en la API (parsed):', errorData);
+                        addAssistantMessageInternal(`Error al contactar al asistente: ${errorData.error || response.statusText}. ${errorData.details || ''}`, []);
+                        
+                        if (response.status === 400 && errorData.error && typeof errorData.error === 'string' && errorData.error.toLowerCase().includes("thread_id")) {
+                             addAssistantMessageInternal("Parece que hubo un problema con la sesión anterior. Intentando iniciar una nueva sesión...", []);
+                             currentThreadId = null; 
+                             console.warn("Thread ID issue detected, resetting threadId for next message.");
+                        }
+                        return; 
+                    }
+
+                    const data = await response.json();
+                    console.log("API Response Data (parsed):", data);
+                    
+                    if (data.thread_id) {
+                        currentThreadId = data.thread_id;
+                        console.log("Updated Thread ID:", currentThreadId);
+                    }
+                    if (data.run_id) {
+                        currentRunId = data.run_id; 
+                        console.log("Updated Run ID:", currentRunId);
+                    }
+
+                    if (data.response) {
+                        addAssistantMessage(data.response); 
+                    } else if (data.error) {
+                        addAssistantMessageInternal(`Error: ${data.error}. ${data.details || ''}`, []);
+                    } else {
+                        addAssistantMessageInternal("No se recibió una respuesta clara del asistente.", []);
+                    }
+
+                } catch (error) {
+                    removeTypingIndicator();
+                    console.error('Error en la llamada fetch (catch block):', error);
+                    addAssistantMessageInternal("Error de conexión. Por favor, inténtalo de nuevo más tarde. Revisa la consola para más detalles.", []);
+                } finally {
+                    clearSelectedFile();
+                }
+            }
+            
+            function addMessageToChat(content, type) { 
+                const messageElement = document.createElement('div');
+                messageElement.classList.add('message', type); 
+                if (typeof content === 'string') {
+                     messageElement.innerHTML = content; 
+                } else if (content && content.type === 'system') { 
+                     messageElement.textContent = content.text;
+                     messageElement.style.fontStyle = 'italic';
+                     messageElement.style.color = '#6b7280';
+                     messageElement.style.alignSelf = 'center';
+                     messageElement.style.maxWidth = '100%';
+                     messageElement.style.textAlign = 'center';
+                } else if (typeof content === 'object' && content !== null && 'text' in content) { 
+                    messageElement.textContent = content.text;
+                } else if (typeof content !== 'string') { 
+                    messageElement.textContent = String(content);
+                }
+
+                if(chatMessages) chatMessages.appendChild(messageElement);
+                if(chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight; 
+            }
+            
+            function addUserMessage(text) { 
+                console.log("User message added to chat:", text);
+                const messageElement = document.createElement('div');
+                messageElement.classList.add('message', 'user-message');
+                messageElement.textContent = text; 
+                if(chatMessages) chatMessages.appendChild(messageElement);
+                if(chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+            
+            function addAssistantMessage(rawResponseText) {
+                console.log("Raw assistant response received:", rawResponseText);
+                const sourceTagRegex = /【([^†]+)†source】/g;
+                const sourceMatches = [...rawResponseText.matchAll(sourceTagRegex)];
+                const cleanedResponseText = rawResponseText.replace(sourceTagRegex, '').trim();
+                const mainHtmlContent = marked.parse(cleanedResponseText);
+                addAssistantMessageInternal(mainHtmlContent, sourceMatches);
+            }
+
+            function addAssistantMessageInternal(mainHtmlContent, sourceMatches) {
+                const messageWrapper = document.createElement('div');
+                messageWrapper.classList.add('message', 'assistant-message');
+                const mainTextDiv = document.createElement('div');
+                mainTextDiv.classList.add('main-assistant-text');
+                mainTextDiv.innerHTML = mainHtmlContent;
+                messageWrapper.appendChild(mainTextDiv);
+                if(chatMessages) chatMessages.appendChild(messageWrapper); 
+                if (sourceMatches && sourceMatches.length > 0) {
+                    const sourcesContainerDiv = document.createElement('div');
+                    sourcesContainerDiv.classList.add('source-chunks-container');
+                    messageWrapper.appendChild(sourcesContainerDiv); 
+                    sourceMatches.forEach(match => {
+                        const sourceId = match[1]; 
+                        fetchAndDisplaySource(sourceId, sourcesContainerDiv);
+                    });
+                }
+                if(chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+
+            async function fetchAndDisplaySource(sourceId, containerElement) {
+                const sourceDiv = document.createElement('div');
+                sourceDiv.classList.add('source-chunk');
+                sourceDiv.innerHTML = `<em>Cargando fuente ${sourceId}...</em>`;
+                containerElement.appendChild(sourceDiv);
+                console.log(`Fetching source for ID: ${sourceId}`);
+                try {
+                    const response = await fetch(`${GET_SOURCE_ENDPOINT}?id=${encodeURIComponent(sourceId)}`);
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`Error del servidor al cargar fuente ${sourceId}: ${response.status} ${errorText}`);
+                    }
+                    const sourceData = await response.json(); 
+                    if (sourceData.text) {
+                        const escapedText = sourceData.text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+                        sourceDiv.innerHTML = `<strong>Fuente ${sourceId}:</strong><br>${escapedText.replace(/\n/g, "<br>")}`; 
+                    } else if (sourceData.error) {
+                        sourceDiv.innerHTML = `<em>Error al cargar fuente ${sourceId}: ${sourceData.error}</em>`;
+                    } else {
+                         sourceDiv.innerHTML = `<em>Fuente ${sourceId} no encontrada o formato incorrecto.</em>`;
+                    }
+                } catch (error) {
+                    console.error(`Failed to fetch source ${sourceId}:`, error);
+                    sourceDiv.innerHTML = `<em>Error al cargar fuente ${sourceId}.</em>`;
+                }
+            }
+            
+            let typingIndicatorElement = null;
+            function showTypingIndicator() {
+                if (typingIndicatorElement) return; 
+                console.log("Showing typing indicator...");
+                typingIndicatorElement = document.createElement('div');
+                typingIndicatorElement.classList.add('message', 'assistant-message', 'typing-indicator');
+                typingIndicatorElement.textContent = "Generando una respuesta, espere unos segundos...";
+                if(chatMessages) chatMessages.appendChild(typingIndicatorElement);
+                if(chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+
+            function removeTypingIndicator() {
+                if (typingIndicatorElement) {
+                    console.log("Removing typing indicator.");
+                    typingIndicatorElement.remove();
+                    typingIndicatorElement = null;
+                }
+            }
+
+            if (sendButton) {
+                sendButton.addEventListener('click', handleSendMessage);
+            } else {
+                console.error("Send button not found in DOM!");
+            }
+
+            if (userInput) {
+                userInput.addEventListener('keypress', function(event) {
+                    if (event.key === 'Enter') {
+                        handleSendMessage();
+                    }
+                });
+            } else {
+                console.error("User input not found in DOM!");
+            }
+
+            initializeChat();
+        });
+    </script>
+</body>
+</html>
