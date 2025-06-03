@@ -2,6 +2,7 @@ import os
 import time
 import json
 from flask import Flask, request, jsonify
+from flask_cors import CORS # Importa CORS
 import openai
 from openai import OpenAI
 import logging
@@ -9,6 +10,8 @@ from google.cloud import firestore
 
 # Initialize Flask app
 app = Flask(__name__)
+CORS(app) # Esto habilita CORS para todas las rutas y orígenes por defecto
+origins="*"
 
 # --- Centralized Logging Setup ---
 app.logger.setLevel(logging.INFO)

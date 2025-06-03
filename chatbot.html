@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asistente de Auditoría en Sostenibilidad</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5; /* Un gris claro similar al de la imagen */
+        }
+        #chat-container {
+            width: 100%;
+            max-width: 800px;
+            height: calc(100vh - 200px); /* Ajustar altura para dejar espacio al input y header */
+            margin: 20px auto;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            background-color: #ffffff; /* Fondo blanco para el chat */
+        }
+        .chat-header {
+            background-color: #075e54; /* Verde oscuro similar a WhatsApp o Telegram */
+            color: white;
+            padding: 1rem;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;
+            text-align: center;
+        }
+        .chat-header h1 {
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        #chat-messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .message {
+            padding: 0.75rem 1rem;
+            border-radius: 10px;
+            max-width: 75%;
+            line-height: 1.5;
+        }
+        .user-message {
+            background-color: #dcf8c6; /* Verde claro para mensajes de usuario */
+            align-self: flex-end;
+            border-bottom-right-radius: 0;
+        }
+        .assistant-message {
+            background-color: #f1f0f0; /* Gris claro para mensajes de asistente */
+            align-self: flex-start;
+            border-bottom-left-radius: 0;
+        }
+        .assistant-message strong {
+            color: #075e54; /* Resaltar partes del mensaje del asistente */
+        }
+        #input-area {
+            display: flex;
+            padding: 1rem;
+            border-top: 1px solid #e0e0e0;
+            background-color: #f9f9f9;
+            border-bottom-left-radius: 12px;
+            border-bottom-right-radius: 12px;
+        }
+        #user-input {
+            flex-grow: 1;
+            padding: 0.75rem;
+            border: 1px solid #ccc;
+            border-radius: 20px;
+            margin-right: 0.5rem;
+            font-size: 1rem;
+        }
+        #send-button, .mode-button {
+            padding: 0.75rem 1.25rem;
+            background-color: #128c7e; /* Verde más brillante para botones */
+            color: white;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background-color 0.3s ease;
+        }
+        #send-button:hover, .mode-button:hover {
+            background-color: #075e54; /* Verde oscuro al pasar el ratón */
+        }
+        .mode-selection {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            padding: 1.5rem;
+        }
+        .typing-indicator {
+            font-style: italic;
+            color: #777;
+            padding: 0.5rem 1.5rem;
+            align-self: flex-start;
+        }
+
+        /* Estilos para hacer el chat responsive */
+        @media (max-width: 600px) {
+            #chat-container {
+                height: calc(100vh - 150px);
+                margin: 10px;
+            }
+            .chat-header h1 {
+                font-size: 1.1rem;
+            }
+            #chat-messages {
+                padding: 1rem;
+            }
+            .message {
+                max-width: 85%;
+            }
+            #input-area {
+                padding: 0.75rem;
+            }
+            #user-input {
+                padding: 0.6rem;
+                font-size: 0.9rem;
+            }
+            #send-button, .mode-button {
+                padding: 0.6rem 1rem;
+                font-size: 0.9rem;
+            }
+            .mode-selection {
+                 flex-direction: column;
+                 align-items: center;
+            }
+            .mode-button {
+                width: 80%;
+                max-width: 250px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="chat-container">
+        <div class="chat-header">
+            <h1>Asistente de Auditoría y Asesoría en Sostenibilidad</h1>
+        </div>
+        <div id="chat-messages">
+            </div>
+        <div id="input-area" class="hidden"> <input type="text" id="user-input" placeholder="Escribe tu mensaje aquí...">
+            <button id="send-button">Enviar</button>
+        </div>
+        <div id="mode-selection-area" class="mode-selection">
+            </div>
+    </div>
+
+    <script>
+        const chatMessages = document.getElementById('chat-messages');
+        const userInput = document.getElementById('user-input');
+        const sendButton = document.getElementById('send-button');
+        const inputArea = document.getElementById('input-area');
+        const modeSelectionArea = document.getElementById('mode-selection-area');
+
+        // URLs de los endpoints (ajusta si es necesario, especialmente para el modo asesor)
+        const AUDITOR_ENDPOINT = 'https://orchestrator-520199812528.europe-west1.run.app/chat_auditor';
+        const ADVISOR_ENDPOINT = 'https://orchestrator-520199812528.europe-west1.run.app/chat_assistant'; // Asumiendo este endpoint para el asesor
+
+        let currentMode = null; // 'auditor' o 'advisor'
+        let currentThreadId = null;
+        let currentRunId = null; // No se usa directamente para enviar, pero se recibe
+
+        // --- PASO 0: Question Auditor 0 ---
+        function initializeChat() {
+            addAssistantMessage("¡Hola! Somos tus auditores legales especializados en sostenibilidad empresarial y diligencia debida. Guiaremos el proceso de auditoría.<br>Elige el modo en el que quieres interactuar.");
+            
+            modeSelectionArea.innerHTML = `
+                <button class="mode-button" data-mode="auditor">Modo Auditor</button>
+                <button class="mode-button" data-mode="advisor">Modo Asesor</button>
+            `;
+
+            document.querySelectorAll('.mode-button').forEach(button => {
+                button.addEventListener('click', handleModeSelection);
+            });
+            inputArea.classList.add('hidden'); // Asegurar que el input está oculto
+        }
+
+        function handleModeSelection(event) {
+            currentMode = event.target.dataset.mode;
+            modeSelectionArea.classList.add('hidden'); // Ocultar botones de modo
+            inputArea.classList.remove('hidden'); // Mostrar área de input
+            userInput.value = ''; // Limpiar input
+            userInput.focus();
+            currentThreadId = null; // Resetear thread_id al cambiar de modo
+
+            if (currentMode === 'auditor') {
+                // --- PASO: Modo Auditor - Pregunta 1 ---
+                addAssistantMessage("Has seleccionado el modo <strong>AUDITOR</strong>.<br>Voy a hacerte una batería de preguntas para comprobar el nivel de adecuación al estándar y al finalizar generaré un informe.<br>Comienza por contarme: nombre de la empresa, sector, tamaño y sedes de la empresa.");
+                userInput.placeholder = "Nombre, sector, tamaño, sedes...";
+            } else if (currentMode === 'advisor') {
+                addAssistantMessage("Has seleccionado el modo <strong>ASESOR</strong>.<br>Puedes hacerme preguntas o pedirme consejo sobre temas de sostenibilidad y diligencia debida. ¿En qué puedo ayudarte hoy?");
+                userInput.placeholder = "Escribe tu consulta de asesoría...";
+            }
+        }
+
+        async function handleSendMessage() {
+            const messageText = userInput.value.trim();
+            if (!messageText) return;
+
+            addUserMessage(messageText);
+            userInput.value = '';
+            showTypingIndicator();
+
+            let endpoint = '';
+            let payload = {
+                message: messageText,
+                thread_id: currentThreadId // Enviar thread_id si existe
+            };
+
+            if (currentMode === 'auditor') {
+                endpoint = AUDITOR_ENDPOINT;
+            } else if (currentMode === 'advisor') {
+                endpoint = ADVISOR_ENDPOINT;
+            } else {
+                removeTypingIndicator();
+                addAssistantMessage("Error: No se ha seleccionado un modo válido.");
+                return;
+            }
+
+            try {
+                // --- PASO: Orquestador GCP (o Asesor GCP) ---
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                removeTypingIndicator();
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ error: "Error desconocido en la respuesta del servidor.", details: `Status: ${response.status}` }));
+                    console.error('Error en la API:', errorData);
+                    addAssistantMessage(`Error al contactar al asistente: ${errorData.error || response.statusText}. ${errorData.details || ''}`);
+                    if (response.status === 400 && errorData.error && errorData.error.toLowerCase().includes("thread_id")) {
+                         addAssistantMessage("Parece que hubo un problema con la sesión anterior. Intentando iniciar una nueva sesión...");
+                         currentThreadId = null; // Forzar reinicio de hilo en el próximo mensaje
+                    }
+                    return;
+                }
+
+                const data = await response.json();
+                
+                // Almacenar thread_id y run_id (aunque run_id no se use para enviar, es bueno tenerlo)
+                if (data.thread_id) {
+                    currentThreadId = data.thread_id;
+                }
+                if (data.run_id) {
+                    currentRunId = data.run_id; // Para referencia futura o logging
+                }
+
+                // --- PASO: Question #2 (o respuesta del asesor) ---
+                if (data.response) {
+                    addAssistantMessage(data.response);
+                } else if (data.error) {
+                    addAssistantMessage(`Error: ${data.error}. ${data.details || ''}`);
+                } else {
+                    addAssistantMessage("No se recibió una respuesta clara del asistente.");
+                }
+
+            } catch (error) {
+                removeTypingIndicator();
+                console.error('Error en la llamada fetch:', error);
+                addAssistantMessage("Error de conexión. Por favor, inténtalo de nuevo más tarde.");
+            }
+            // El flujo continúa esperando una nueva pregunta del usuario (implícito)
+            // El mensaje "Generando una respuesta..." se maneja con show/removeTypingIndicator
+        }
+
+        function addMessageToChat(text, type) {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message', type);
+            messageElement.innerHTML = text; // Usar innerHTML para permitir <br> y <strong>
+            chatMessages.appendChild(messageElement);
+            chatMessages.scrollTop = chatMessages.scrollHeight; // Auto-scroll
+        }
+
+        function addUserMessage(text) {
+            addMessageToChat(text, 'user-message');
+        }
+
+        function addAssistantMessage(text) {
+            addMessageToChat(text, 'assistant-message');
+        }
+        
+        let typingIndicatorElement = null;
+        function showTypingIndicator() {
+            if (typingIndicatorElement) return; // Ya visible
+            // --- PASO: Procesando Respuesta ---
+            typingIndicatorElement = document.createElement('div');
+            typingIndicatorElement.classList.add('message', 'assistant-message', 'typing-indicator');
+            typingIndicatorElement.textContent = "Generando una respuesta, espere unos segundos...";
+            chatMessages.appendChild(typingIndicatorElement);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function removeTypingIndicator() {
+            if (typingIndicatorElement) {
+                typingIndicatorElement.remove();
+                typingIndicatorElement = null;
+            }
+        }
+
+        sendButton.addEventListener('click', handleSendMessage);
+        userInput.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                handleSendMessage();
+            }
+        });
+
+        // Iniciar el chat
+        initializeChat();
+    </script>
+</body>
+</html>
