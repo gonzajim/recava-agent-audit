@@ -10,8 +10,11 @@ from google.cloud import firestore
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app) # Esto habilita CORS para todas las rutas y orígenes por defecto
-origins="*"
+
+# Configuración de CORS explícita
+# Esto permite cualquier origen (*), cualquier cabecera, y los métodos comunes.
+# También es importante para manejar el 'Content-Type' que envías.
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True, methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], allow_headers=["Content-Type", "Authorization", "X-Requested-With"])
 
 # --- Centralized Logging Setup ---
 app.logger.setLevel(logging.INFO)
