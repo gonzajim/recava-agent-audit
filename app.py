@@ -150,83 +150,113 @@ def execute_invoke_sustainability_expert(query: str, original_thread_id: str) ->
                 app.logger.error(f"Tool ({tool_name}): Failed to delete temporary thread {temp_thread.id}. Error: {delete_err}", exc_info=True)
 
 # --- Función auxiliar para procesar mensajes y extraer citas ---
+# --- Función auxiliar para procesar mensajes y extraer citas ---
 def process_assistant_message_with_citations(messages_data, final_run_id, endpoint_name):
     assistant_response_text = "No new response from assistant for this run."
     full_assistant_response_object = None
     citations_extracted = []
-    raw_response_text_for_processing = ""
+    raw_response_text_for_processing = "" # Texto original del asistente antes de insertar marcadores
 
     for msg in messages_data:
         if msg.run_id == final_run_id and msg.role == "assistant":
             if msg.content:
-                # Suponemos que el texto principal está en el primer bloque de contenido
-                # y que es de tipo 'text'. Si hay múltiples bloques de texto, se concatenarán.
                 text_parts = []
-                for content_block in msg.content:
+                # Iterar sobre todos los bloques de contenido del mensaje
+                for content_block_idx, content_block in enumerate(msg.content):
                     if content_block.type == 'text':
                         text_parts.append(content_block.text.value)
-                        # Guardar el primer content_block de texto que tenga anotaciones para procesarlas
+                        # Considerar el primer bloque de texto con anotaciones para el procesamiento de citas
+                        # O si es el único bloque de texto.
                         if not full_assistant_response_object and hasattr(content_block.text, 'annotations') and content_block.text.annotations:
-                             full_assistant_response_object = content_block # Guardamos el text_content_block
-                
+                            full_assistant_response_object = content_block # Guardamos el TextContentBlock
+                        elif not full_assistant_response_object and len(msg.content) == 1: # Si solo hay un bloque y es texto
+                            full_assistant_response_object = content_block
+
+
                 raw_response_text_for_processing = "\n".join(text_parts).strip()
-                assistant_response_text = raw_response_text_for_processing # Inicialmente, la respuesta es el texto crudo
-                break # Salir después de encontrar el primer mensaje relevante del asistente
+                assistant_response_text = raw_response_text_for_processing 
+                break 
 
-    # Procesar anotaciones si existen
-    if full_assistant_response_object and full_assistant_response_object.type == 'text' and hasattr(full_assistant_response_object.text, 'annotations'):
+    if not raw_response_text_for_processing and assistant_response_text == "No new response from assistant for this run.":
+        app.logger.warning(f"{endpoint_name}: No text content found in assistant's message for run {final_run_id}.")
+        return assistant_response_text, citations_extracted # Devuelve respuesta vacía y sin citas
+
+    # Procesar anotaciones si existen en el objeto guardado
+    if full_assistant_response_object and full_assistant_response_object.type == 'text' and hasattr(full_assistant_response_object.text, 'annotations') and full_assistant_response_object.text.annotations:
         annotations = full_assistant_response_object.text.annotations
-        # Ordenar anotaciones por start_index para un reemplazo consistente
-        annotations.sort(key=lambda x: x.start_index)
+        
+        # Necesitamos trabajar sobre el texto del content_block específico que tiene las anotaciones
+        # ya que los start_index y end_index son relativos a ese bloque.
+        # Si concatenamos varios bloques, los índices no coincidirán.
+        # Aquí asumimos que las anotaciones importantes están en `raw_response_text_for_processing`
+        # si este vino del `full_assistant_response_object`.
+        # Si `raw_response_text_for_processing` es una concatenación de múltiples bloques,
+        # y las anotaciones solo pertenecen a uno, este enfoque de reemplazo global podría ser problemático.
+        # Por simplicidad, continuaremos con el reemplazo sobre `raw_response_text_for_processing`,
+        # asumiendo que el texto relevante para las anotaciones está contenido ahí y los índices son manejables.
+        # Una solución más robusta implicaría procesar cada content_block con sus anotaciones por separado.
 
+        # Ordenar anotaciones por start_index para un reemplazo consistente y no solapado
+        # Es crucial que los reemplazos se hagan de atrás hacia adelante o usando offsets si se hacen hacia adelante.
+        # O construir una nueva cadena.
+        
         processed_text_parts = []
-        current_pos = 0
-        citation_counter = 1 # Marcadores numéricos comenzando en [1]
+        current_pos_in_raw_text = 0
+        citation_counter = 1 
 
-        for annotation in annotations:
-            if getattr(annotation, 'file_citation', None):
-                # Añadir el texto antes de la anotación
-                processed_text_parts.append(raw_response_text_for_processing[current_pos:annotation.start_index])
-                
-                # Añadir el marcador de cita
-                marker = f" [{citation_counter}]"
-                processed_text_parts.append(marker)
-                
-                # Extraer la cita
-                cited_file_id = annotation.file_citation.file_id
-                quote = annotation.file_citation.quote
-                
-                # Opcional: recuperar nombre del archivo (puede añadir latencia)
-                # try:
-                # file_name = client.files.retrieve(file_id=cited_file_id).filename
-                # except Exception:
-                # file_name = "Unknown File"
+        # Asegurarnos de que las anotaciones son solo del tipo file_citation relevante
+        # y ordenarlas para procesarlas correctamente
+        file_citation_annotations = []
+        for ann_idx, annotation in enumerate(annotations):
+            if hasattr(annotation, 'file_citation') and annotation.file_citation and hasattr(annotation.file_citation, 'file_id'):
+                 file_citation_annotations.append(annotation)
+        
+        file_citation_annotations.sort(key=lambda x: x.start_index)
 
-                citations_extracted.append({
-                    "marker": f"[{citation_counter}]", # Usar el mismo marcador
-                    "text_in_response": annotation.text, # El texto original que fue reemplazado
-                    "file_id": cited_file_id,
-                    "quote_from_file": quote,
-                    # "file_name": file_name # Descomentar si se recupera
-                })
-                app.logger.info(f"{endpoint_name}: Found file citation: marker='{marker}', text='{annotation.text}', file_id='{cited_file_id}', quote='{quote[:100]}...'")
-                
-                current_pos = annotation.end_index
-                citation_counter += 1
-            # Podrías añadir manejo para 'file_path' aquí si es necesario
-            # elif getattr(annotation, 'file_path', None):
-            #     # ...
 
+        for annotation in file_citation_annotations:
+            # Añadir el texto antes de la anotación actual
+            # Los índices start_index y end_index se refieren al texto del content_block específico.
+            # Si raw_response_text_for_processing es solo ese content_block, esto es correcto.
+            processed_text_parts.append(raw_response_text_for_processing[current_pos_in_raw_text:annotation.start_index])
+            
+            marker = f" [{citation_counter}]"
+            processed_text_parts.append(marker)
+            
+            cited_file_id = annotation.file_citation.file_id
+            
+            # Acceso seguro al atributo 'quote'
+            quote_from_file = getattr(annotation.file_citation, 'quote', None)
+            
+            if quote_from_file is None:
+                app.logger.warning(f"{endpoint_name}: Annotation file_citation for file_id '{cited_file_id}' (annotation text: '{annotation.text}') did not contain a 'quote' attribute. Full file_citation object: {str(annotation.file_citation)}")
+                # Usar el texto de la anotación del LLM como fallback si 'quote' no está.
+                # Esto significa que el texto en la respuesta del LLM se usará como si fuera la "cita".
+                quote_from_file = annotation.text  # O un placeholder como "Referencia directa al archivo (cita específica no extraída)."
+            
+            citations_extracted.append({
+                "marker": marker,
+                "text_in_response": annotation.text, 
+                "file_id": cited_file_id,
+                "quote_from_file": quote_from_file,
+            })
+            app.logger.info(f"{endpoint_name}: Found file citation: marker='{marker}', text_in_response='{annotation.text}', file_id='{cited_file_id}', quote_from_file='{str(quote_from_file)[:100]}...'")
+            
+            current_pos_in_raw_text = annotation.end_index
+            citation_counter += 1
+        
         # Añadir cualquier texto restante después de la última anotación
-        processed_text_parts.append(raw_response_text_for_processing[current_pos:])
+        processed_text_parts.append(raw_response_text_for_processing[current_pos_in_raw_text:])
         assistant_response_text = "".join(processed_text_parts)
-    
-    elif not raw_response_text_for_processing and assistant_response_text == "No new response from assistant for this run.":
-         app.logger.warning(f"{endpoint_name}: No text content found in assistant's message for run {final_run_id}.")
-    elif not full_assistant_response_object:
-        app.logger.info(f"{endpoint_name}: Assistant message for run {final_run_id} found, but no annotations present or not in expected structure.")
-        # assistant_response_text ya tiene el texto crudo
-    
+
+    elif not full_assistant_response_object and raw_response_text_for_processing:
+        app.logger.info(f"{endpoint_name}: Assistant message for run {final_run_id} found, but no annotations detected or structure not as expected. Returning raw text.")
+        # assistant_response_text ya tiene el raw_response_text_for_processing
+    elif assistant_response_text != "No new response from assistant for this run.":
+        # Hay texto pero no se procesaron anotaciones (quizás no había o no se detectó full_assistant_response_object)
+        app.logger.info(f"{endpoint_name}: Assistant response text available but no annotations were processed. Text: {assistant_response_text[:100]}...")
+
+
     return assistant_response_text.strip(), citations_extracted
 
 
