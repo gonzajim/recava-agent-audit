@@ -123,7 +123,13 @@ def execute_invoke_sustainability_expert(query: str, original_thread_id: str) ->
 
         response_text = error_message_for_orchestrator
         if run.status == 'completed':
-            messages = client.beta.threads.messages.list(thread_id=temp_thread_id, run_id=run.id, order='desc', limit=1)
+            messages = client.beta.threads.messages.list(
+                thread_id=temp_thread_id,
+                run_id=run.id,
+                order='desc',
+                limit=1,
+                expand=['file_citations']
+            )
             if messages.data and messages.data[0].content:
                 response_text = "".join([content_block.text.value for content_block in messages.data[0].content if content_block.type == 'text'])
                 if not response_text.strip():
@@ -439,7 +445,13 @@ def chat_with_main_audit_orchestrator():
 
         if final_run_status == 'completed':
             app.logger.info(f"{endpoint_name}: Main Auditor-Orchestrator Run {current_run.id} on thread {thread_id} completed.")
-            messages = client.beta.threads.messages.list(thread_id=thread_id, order='desc', limit=10)
+            messages = client.beta.threads.messages.list(
+                thread_id=thread_id,
+                run_id=current_run.id,
+                order='desc',
+                limit=10,
+                expand=['file_citations']
+            )
             
             assistant_response_text, citations_extracted = process_assistant_message_with_citations(messages.data, current_run.id, endpoint_name)
             
@@ -594,7 +606,13 @@ def chat_with_sustainability_expert():
         app.logger.info(f"{endpoint_name}: Sustainability Expert Run {sustainability_run_id_for_storage} on thread {thread_id} polling completed with status: {final_run_status}")
 
         if final_run_status == 'completed':
-            messages = client.beta.threads.messages.list(thread_id=thread_id, order='desc', limit=10)
+            messages = client.beta.threads.messages.list(
+                thread_id=thread_id,
+                run_id=sustainability_run_id_for_storage,
+                order='desc',
+                limit=10,
+                expand=['file_citations']
+            )
             
             assistant_response_text, citations_extracted = process_assistant_message_with_citations(messages.data, sustainability_run_id_for_storage, endpoint_name)
 
