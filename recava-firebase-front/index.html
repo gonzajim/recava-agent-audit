@@ -265,6 +265,9 @@
             border-radius: 6px;
             font-size: 0.95rem;
             color: var(--texto-oscuro-principal);
+            resize: none;
+            overflow-y: hidden;
+            min-height: 40px;
         }
         #user-input::placeholder { color: var(--texto-gris-sutil); }
         #user-input:focus {
@@ -356,6 +359,7 @@
             #user-input {
                 padding: 0.6rem 0.8rem;
                 font-size: 0.9rem;
+                min-height: 38px;
             }
             
             .mode-button-container {
@@ -408,7 +412,7 @@
                     <button id="attach-file-button" title="Adjuntar archivo (Funcionalidad RAG pendiente)">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.49"></path></svg>
                     </button>
-                    <input type="text" id="user-input" placeholder="Selecciona un modo para comenzar...">
+                    <textarea id="user-input" rows="1" placeholder="Selecciona un modo para comenzar..."></textarea>
                     <button id="send-button">Enviar</button>
                 </div>
             </div>
@@ -425,6 +429,17 @@
             const filePreviewAreaEl = document.getElementById('file-preview-area');
             const fileNamePreviewEl = document.getElementById('file-name-preview');
             const removeFileButtonEl = document.getElementById('remove-file-button');
+
+            function adjustUserInputHeight() {
+                if (!userInputEl) return;
+                userInputEl.style.height = 'auto';
+                userInputEl.style.height = userInputEl.scrollHeight + 'px';
+            }
+
+            if (userInputEl) {
+                userInputEl.addEventListener('input', adjustUserInputHeight);
+                adjustUserInputHeight();
+            }
 
             // Reemplaza con tus URLs de backend reales si son diferentes o si usas un proxy
             const AUDITOR_ENDPOINT_URL = 'https://orchestrator-520199812528.europe-west1.run.app/chat_auditor'; 
@@ -478,6 +493,7 @@
                 if(userInputEl) {
                     userInputEl.value = '';
                     userInputEl.focus();
+                    adjustUserInputHeight();
                 }
                 currentChatThreadId = null; // Reset thread for new mode or new conversation
                 clearSelectedFileUI();
@@ -551,6 +567,7 @@
 
                 addUserMessageToChat(messageText);
                 userInputEl.value = '';
+                adjustUserInputHeight();
                 showTypingIndicatorToChat();
 
                 const endpointUrl = currentChatMode === 'auditor' ? AUDITOR_ENDPOINT_URL : ADVISOR_ENDPOINT_URL;
@@ -722,7 +739,8 @@
             }
             if (userInputEl) {
                 userInputEl.addEventListener('keypress', function(event) {
-                    if (event.key === 'Enter' && sendButtonEl && !sendButtonEl.disabled) {
+                    if (event.key === 'Enter' && !event.shiftKey && sendButtonEl && !sendButtonEl.disabled) {
+                        event.preventDefault();
                         handleSendMessageToServer();
                     }
                 });
