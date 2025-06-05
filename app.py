@@ -53,6 +53,15 @@ try:
         max_retries=2
     )
     app.logger.info("OpenAI client initialized successfully.")
+
+    from packaging import version
+    min_version = version.parse("1.3.0")
+    installed_version = version.parse(openai.__version__)
+    if installed_version < min_version:
+        raise RuntimeError(
+            f"OpenAI SDK version {min_version} or newer required; found {openai.__version__}"
+        )
+    app.logger.info(f"OpenAI SDK version {openai.__version__} meets minimum requirement")
 except Exception as e:
     app.logger.critical(f"Failed to initialize OpenAI client: {e}", exc_info=True)
     raise
