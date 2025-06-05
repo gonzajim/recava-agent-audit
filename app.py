@@ -12,8 +12,6 @@ from google.cloud import firestore
 app = Flask(__name__)
 
 # Configuración de CORS explícita
-# Esto permite cualquier origen (*), cualquier cabecera, y los métodos comunes.
-# También es importante para manejar el 'Content-Type' que envías.
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True, methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], allow_headers=["Content-Type", "Authorization", "X-Requested-With"])
 
 # --- Centralized Logging Setup ---
@@ -31,17 +29,17 @@ app.logger.info("Flask application starting up...")
 
 # Load environment variables
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-AUDIT_ORCHESTRATOR_ASSISTANT_ID = os.getenv("ORCHESTRATOR_ASSISTANT_ID") 
-SUSTAINABILITY_EXPERT_ASSISTANT_ID = os.getenv("ASISTENTE_ID") 
+AUDIT_ORCHESTRATOR_ASSISTANT_ID = os.getenv("ORCHESTRATOR_ASSISTANT_ID")
+SUSTAINABILITY_EXPERT_ASSISTANT_ID = os.getenv("ASISTENTE_ID")
 
 # Validaciones de variables de entorno
 if not OPENAI_API_KEY:
     app.logger.critical("Missing OPENAI_API_KEY environment variable.")
     raise ValueError("Missing OPENAI_API_KEY environment variable.")
-if not AUDIT_ORCHESTRATOR_ASSISTANT_ID: 
+if not AUDIT_ORCHESTRATOR_ASSISTANT_ID:
     app.logger.critical("Missing ORCHESTRATOR_ASSISTANT_ID (for Auditor-Orchestrator role) environment variable.")
     raise ValueError("Missing ORCHESTRATOR_ASSISTANT_ID (for Auditor-Orchestrator role) environment variable.")
-if not SUSTAINABILITY_EXPERT_ASSISTANT_ID: 
+if not SUSTAINABILITY_EXPERT_ASSISTANT_ID:
     app.logger.critical("Missing ASISTENTE_ID (for Sustainability Expert role) environment variable.")
     raise ValueError("Missing ASISTENTE_ID (for Sustainability Expert role) environment variable.")
 
@@ -51,7 +49,7 @@ app.logger.info("Environment variables loaded.")
 try:
     client = OpenAI(
         api_key=OPENAI_API_KEY,
-        timeout=30.0, 
+        timeout=30.0,
         max_retries=2
     )
     app.logger.info("OpenAI client initialized successfully.")
@@ -68,7 +66,7 @@ except Exception as e:
     raise
 
 # --- Función para Guardar Conversación en Firestore ---
-def store_conversation_turn(thread_id: str, user_message: str, assistant_response: str, endpoint_source: str, run_id: str = None, assistant_name: str = None):
+def store_conversation_turn(thread_id: str, user_message: str, assistant_response: str, endpoint_source: str, run_id: str = None, assistant_name: str = None, citations: list = None):
     if not user_message and not assistant_response:
         app.logger.warning(f"Firestore: Skipping storage for thread {thread_id} from {endpoint_source} due to both user_message and assistant_response being empty.")
         return
@@ -86,12 +84,18 @@ def store_conversation_turn(thread_id: str, user_message: str, assistant_respons
             data_to_store['run_id'] = run_id
         if assistant_name:
             data_to_store['assistant_name'] = assistant_name
+        if citations is not None: # Guardar citas si se proporcionan
+            data_to_store['citations'] = citations
+        
         doc_ref.set(data_to_store)
         app.logger.info(f"Firestore: Stored conversation turn for thread {data_to_store['thread_id']} from {endpoint_source} in document {doc_ref.id}.")
     except Exception as e:
         app.logger.error(f"Firestore: Failed to store conversation turn for thread {thread_id}. Error: {e}", exc_info=True)
 
 # --- Implementación de Herramienta para el Auditor-Orquestador ---
+# (execute_invoke_sustainability_expert se mantiene igual, ya que su respuesta es consumida internamente
+# por el orquestador. Si este experto también necesitara devolver citas al orquestador de esta manera,
+# se requerirían cambios similares allí. Por ahora, se asume que su respuesta es texto plano.)
 def execute_invoke_sustainability_expert(query: str, original_thread_id: str) -> str:
     tool_name = "invoke_sustainability_expert"
     app.logger.info(f"Auditor-Orchestrator's tool ({tool_name}): Executing for query: \"{query}\" (Original Thread: {original_thread_id})")
@@ -117,12 +121,12 @@ def execute_invoke_sustainability_expert(query: str, original_thread_id: str) ->
             instructions="Please address the user's query (last message in this thread) based on your knowledge. Provide a concise and focused answer."
         )
 
-        response_text = error_message_for_orchestrator 
+        response_text = error_message_for_orchestrator
         if run.status == 'completed':
             messages = client.beta.threads.messages.list(thread_id=temp_thread_id, run_id=run.id, order='desc', limit=1)
             if messages.data and messages.data[0].content:
                 response_text = "".join([content_block.text.value for content_block in messages.data[0].content if content_block.type == 'text'])
-                if not response_text.strip(): 
+                if not response_text.strip():
                     app.logger.warning(f"Tool ({tool_name}) on temp thread {temp_thread_id}: Sustainability Expert returned empty content.")
                     response_text = "El experto en sostenibilidad no proporcionó una respuesta textual para esta consulta."
                 else:
@@ -145,36 +149,122 @@ def execute_invoke_sustainability_expert(query: str, original_thread_id: str) ->
             except Exception as delete_err:
                 app.logger.error(f"Tool ({tool_name}): Failed to delete temporary thread {temp_thread.id}. Error: {delete_err}", exc_info=True)
 
+# --- Función auxiliar para procesar mensajes y extraer citas ---
+def process_assistant_message_with_citations(messages_data, final_run_id, endpoint_name):
+    assistant_response_text = "No new response from assistant for this run."
+    full_assistant_response_object = None
+    citations_extracted = []
+    raw_response_text_for_processing = ""
+
+    for msg in messages_data:
+        if msg.run_id == final_run_id and msg.role == "assistant":
+            if msg.content:
+                # Suponemos que el texto principal está en el primer bloque de contenido
+                # y que es de tipo 'text'. Si hay múltiples bloques de texto, se concatenarán.
+                text_parts = []
+                for content_block in msg.content:
+                    if content_block.type == 'text':
+                        text_parts.append(content_block.text.value)
+                        # Guardar el primer content_block de texto que tenga anotaciones para procesarlas
+                        if not full_assistant_response_object and hasattr(content_block.text, 'annotations') and content_block.text.annotations:
+                             full_assistant_response_object = content_block # Guardamos el text_content_block
+                
+                raw_response_text_for_processing = "\n".join(text_parts).strip()
+                assistant_response_text = raw_response_text_for_processing # Inicialmente, la respuesta es el texto crudo
+                break # Salir después de encontrar el primer mensaje relevante del asistente
+
+    # Procesar anotaciones si existen
+    if full_assistant_response_object and full_assistant_response_object.type == 'text' and hasattr(full_assistant_response_object.text, 'annotations'):
+        annotations = full_assistant_response_object.text.annotations
+        # Ordenar anotaciones por start_index para un reemplazo consistente
+        annotations.sort(key=lambda x: x.start_index)
+
+        processed_text_parts = []
+        current_pos = 0
+        citation_counter = 1 # Marcadores numéricos comenzando en [1]
+
+        for annotation in annotations:
+            if getattr(annotation, 'file_citation', None):
+                # Añadir el texto antes de la anotación
+                processed_text_parts.append(raw_response_text_for_processing[current_pos:annotation.start_index])
+                
+                # Añadir el marcador de cita
+                marker = f" [{citation_counter}]"
+                processed_text_parts.append(marker)
+                
+                # Extraer la cita
+                cited_file_id = annotation.file_citation.file_id
+                quote = annotation.file_citation.quote
+                
+                # Opcional: recuperar nombre del archivo (puede añadir latencia)
+                # try:
+                # file_name = client.files.retrieve(file_id=cited_file_id).filename
+                # except Exception:
+                # file_name = "Unknown File"
+
+                citations_extracted.append({
+                    "marker": f"[{citation_counter}]", # Usar el mismo marcador
+                    "text_in_response": annotation.text, # El texto original que fue reemplazado
+                    "file_id": cited_file_id,
+                    "quote_from_file": quote,
+                    # "file_name": file_name # Descomentar si se recupera
+                })
+                app.logger.info(f"{endpoint_name}: Found file citation: marker='{marker}', text='{annotation.text}', file_id='{cited_file_id}', quote='{quote[:100]}...'")
+                
+                current_pos = annotation.end_index
+                citation_counter += 1
+            # Podrías añadir manejo para 'file_path' aquí si es necesario
+            # elif getattr(annotation, 'file_path', None):
+            #     # ...
+
+        # Añadir cualquier texto restante después de la última anotación
+        processed_text_parts.append(raw_response_text_for_processing[current_pos:])
+        assistant_response_text = "".join(processed_text_parts)
+    
+    elif not raw_response_text_for_processing and assistant_response_text == "No new response from assistant for this run.":
+         app.logger.warning(f"{endpoint_name}: No text content found in assistant's message for run {final_run_id}.")
+    elif not full_assistant_response_object:
+        app.logger.info(f"{endpoint_name}: Assistant message for run {final_run_id} found, but no annotations present or not in expected structure.")
+        # assistant_response_text ya tiene el texto crudo
+    
+    return assistant_response_text.strip(), citations_extracted
+
+
 # --- Endpoint Principal para el Asistente Auditor-Orquestador ---
 @app.route('/chat_auditor', methods=['POST'])
 def chat_with_main_audit_orchestrator():
     endpoint_name = "/chat_auditor"
     app.logger.info(f"Received request for {endpoint_name} (Main Auditor-Orchestrator) endpoint from {request.remote_addr}")
-    user_message_content = None 
+    user_message_content = None
     thread_id = None
-    data_from_request = None 
-    assistant_response_for_storage = "Error or no response generated by Main Auditor-Orchestrator." 
+    data_from_request = None
+    assistant_response_for_storage = "Error or no response generated by Main Auditor-Orchestrator."
+    citations_for_storage = []
     current_run_id_for_storage = None
-    response_payload = {} # Para construir la respuesta final
+    response_payload = {} 
+    http_status_code = 200
 
     try:
         data_from_request = request.json
         if not data_from_request:
             app.logger.warning(f"{endpoint_name}: Request is not JSON or empty.")
             response_payload = {"error": "Invalid request: payload must be JSON."}
+            http_status_code = 400
             app.logger.info(f"{endpoint_name}: Responding with JSON: {json.dumps(response_payload)}")
-            return jsonify(response_payload), 400
+            return jsonify(response_payload), http_status_code
 
         user_message_content = data_from_request.get('message')
-        thread_id = data_from_request.get('thread_id') 
+        thread_id = data_from_request.get('thread_id')
+        # attachments = data_from_request.get('attachments') # Para uso futuro si se suben archivos directamente aquí
 
         app.logger.info(f"{endpoint_name}: Request data: message='{user_message_content}', thread_id='{thread_id}'")
 
         if not user_message_content:
             app.logger.warning(f"{endpoint_name}: No message provided in the request.")
             response_payload = {"error": "No message provided"}
+            http_status_code = 400
             app.logger.info(f"{endpoint_name}: Responding with JSON: {json.dumps(response_payload)}")
-            return jsonify(response_payload), 400
+            return jsonify(response_payload), http_status_code
             
         app.logger.info(f"{endpoint_name}: Attempting to interact with Main Auditor-Orchestrator for thread: {thread_id or 'New Thread'}")
         
@@ -198,13 +288,17 @@ def chat_with_main_audit_orchestrator():
             except Exception as e:
                 app.logger.error(f"{endpoint_name}: Failed to retrieve existing Main Auditor-Orchestrator thread {thread_id}: {e}", exc_info=True)
                 response_payload = {"error": f"Invalid or inaccessible thread_id for Main Auditor-Orchestrator: {thread_id}", "details": str(e)}
+                http_status_code = 400
                 app.logger.info(f"{endpoint_name}: Responding with JSON: {json.dumps(response_payload)}")
-                return jsonify(response_payload), 400
+                return jsonify(response_payload), http_status_code
 
+        # TODO: Manejar 'attachments' si se envían desde el frontend al crear el mensaje.
+        # Por ahora, se asume que los archivos se suben y asocian al asistente o hilo por otros medios si es RAG.
         client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
             content=user_message_content
+            # attachments=attachments if attachments else None # Ejemplo si se pasan attachments
         )
         app.logger.info(f"{endpoint_name}: Added user message to Main Auditor-Orchestrator thread {thread_id}: \"{user_message_content}\"")
 
@@ -213,7 +307,7 @@ def chat_with_main_audit_orchestrator():
             thread_id=thread_id,
             assistant_id=AUDIT_ORCHESTRATOR_ASSISTANT_ID
         )
-        current_run_id_for_storage = current_run.id 
+        current_run_id_for_storage = current_run.id
         app.logger.info(f"{endpoint_name}: Main Auditor-Orchestrator Run {current_run.id} created for thread {thread_id}. Initial status: {current_run.status}")
         
         polling_attempts = 0
@@ -221,32 +315,39 @@ def chat_with_main_audit_orchestrator():
         max_tool_call_iterations = 3 
         tool_iterations_count = 0
         
+        final_run_status = current_run.status
+
         while current_run.status in ['queued', 'in_progress', 'requires_action'] and tool_iterations_count < max_tool_call_iterations :
+            final_run_status = current_run.status
             if current_run.status in ['queued', 'in_progress']:
                 polling_attempts += 1
                 if polling_attempts > max_polling_attempts_before_action:
-                    app.logger.warning(f"{endpoint_name}: Main Auditor-Orchestrator Run {current_run.id} on thread {thread_id} timed out waiting for 'requires_action' or completion. Last status: {current_run.status}")
+                    app.logger.warning(f"{endpoint_name}: Main Auditor-Orchestrator Run {current_run.id} on thread {thread_id} timed out waiting. Last status: {current_run.status}")
                     assistant_response_for_storage = f"OpenAI run (Main Auditor-Orchestrator) timed out. Status: {current_run.status}"
-                    try: 
+                    try:
                         app.logger.info(f"{endpoint_name}: Attempting to cancel run {current_run.id} due to polling timeout.")
                         client.beta.threads.runs.cancel(thread_id=thread_id, run_id=current_run.id)
                         app.logger.info(f"{endpoint_name}: Successfully cancelled run {current_run.id}.")
                         assistant_response_for_storage += " Run cancelled."
+                        final_run_status = "timed_out_and_cancelled"
                     except Exception as cancel_err:
                         app.logger.error(f"{endpoint_name}: Failed to cancel run {current_run.id}: {cancel_err}", exc_info=True)
                         assistant_response_for_storage += " Failed to cancel run."
+                        final_run_status = "timed_out_cancel_failed"
+                    
                     store_conversation_turn(thread_id, user_message_content, assistant_response_for_storage, endpoint_name, current_run.id, "MainAuditOrchestratorTimeout")
-                    response_payload = {"error": "OpenAI run (Main Auditor-Orchestrator) timed out.", "thread_id": thread_id, "run_id": current_run.id, "status": "timed_out_and_cancelled_attempted"}
+                    response_payload = {"error": "OpenAI run (Main Auditor-Orchestrator) timed out.", "thread_id": thread_id, "run_id": current_run.id, "run_status": final_run_status}
+                    http_status_code = 504
                     app.logger.info(f"{endpoint_name}: Responding with JSON: {json.dumps(response_payload)}")
-                    return jsonify(response_payload), 504
+                    return jsonify(response_payload), http_status_code
                 
-                time.sleep(1)
+                time.sleep(1) # Espera antes de volver a consultar
                 current_run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=current_run.id)
                 app.logger.info(f"{endpoint_name}: Main Auditor-Orchestrator Run {current_run.id} on thread {thread_id} status: {current_run.status} (Polling Attempt {polling_attempts})")
 
             if current_run.status == 'requires_action':
                 tool_iterations_count +=1
-                polling_attempts = 0 
+                polling_attempts = 0 # Resetear contador de polling
                 app.logger.info(f"{endpoint_name}: Main Auditor-Orchestrator Run {current_run.id} requires action (Tool Call Iteration {tool_iterations_count}).")
                 tool_outputs = []
                 if current_run.required_action and current_run.required_action.type == "submit_tool_outputs":
@@ -260,7 +361,7 @@ def chat_with_main_audit_orchestrator():
                         else:
                             app.logger.info(f"{endpoint_name}: Run {current_run.id} calling tool: {function_name}, Args: {arguments}")
                             output = ""
-                            if function_name == "invoke_sustainability_expert": 
+                            if function_name == "invoke_sustainability_expert":
                                 output = execute_invoke_sustainability_expert(query=arguments.get("query"), original_thread_id=thread_id)
                             else:
                                 app.logger.warning(f"{endpoint_name}: Run {current_run.id} requested unknown tool function: {function_name}")
@@ -274,99 +375,148 @@ def chat_with_main_audit_orchestrator():
                             thread_id=thread_id, run_id=current_run.id, tool_outputs=tool_outputs
                         )
                         app.logger.info(f"{endpoint_name}: Tool outputs submitted for run {current_run.id}. Run will re-queue.")
-                        time.sleep(0.5) 
-                        current_run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=current_run.id) 
-                    except Exception as e: 
+                        time.sleep(0.5) # Dar tiempo a que el run se re-enquee
+                        current_run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=current_run.id) # Actualizar estado del run
+                    except Exception as e:
                         app.logger.error(f"{endpoint_name}: Error submitting tool outputs for run {current_run.id} on thread {thread_id}: {e}", exc_info=True)
                         assistant_response_for_storage = f"Error submitting tool outputs: {str(e)}"
                         store_conversation_turn(thread_id, user_message_content, assistant_response_for_storage, endpoint_name, current_run.id, "MainAuditOrchestratorToolError")
                         response_payload = {"error": f"Error submitting tool outputs: {str(e)}", "thread_id": thread_id, "run_id": current_run.id}
+                        http_status_code = 500
                         app.logger.info(f"{endpoint_name}: Responding with JSON: {json.dumps(response_payload)}")
-                        return jsonify(response_payload), 500
-                else: 
+                        return jsonify(response_payload), http_status_code
+                else:
                     app.logger.warning(f"{endpoint_name}: Run {current_run.id} on thread {thread_id} was 'requires_action' but no tool_outputs were generated/processed.")
                     assistant_response_for_storage = "Auditor-Orchestrator required action but no tool outputs were processed."
+                    final_run_status = "requires_action_no_tool_outputs"
                     store_conversation_turn(thread_id, user_message_content, assistant_response_for_storage, endpoint_name, current_run.id, "MainAuditOrchestratorToolError")
-                    response_payload = {"error": "Auditor-Orchestrator required action but no tool outputs were processed.", "thread_id": thread_id, "run_id": current_run.id, "run_status": current_run.status}
+                    response_payload = {"error": "Auditor-Orchestrator required action but no tool outputs were processed.", "thread_id": thread_id, "run_id": current_run.id, "run_status": final_run_status}
+                    http_status_code = 500
                     app.logger.info(f"{endpoint_name}: Responding with JSON: {json.dumps(response_payload)}")
-                    return jsonify(response_payload), 500
+                    return jsonify(response_payload), http_status_code
             
             if tool_iterations_count >= max_tool_call_iterations:
                 app.logger.error(f"{endpoint_name}: Exceeded max tool call iterations ({max_tool_call_iterations}) for run {current_run.id}.")
                 assistant_response_for_storage = "Exceeded max tool call iterations."
+                final_run_status = "max_tool_iterations_exceeded"
                 store_conversation_turn(thread_id, user_message_content, assistant_response_for_storage, endpoint_name, current_run.id, "MainAuditOrchestratorMaxToolCalls")
-                response_payload = {"error": "Exceeded max tool call iterations.", "thread_id": thread_id, "run_id": current_run.id}
+                response_payload = {"error": "Exceeded max tool call iterations.", "thread_id": thread_id, "run_id": current_run.id, "run_status": final_run_status}
+                http_status_code = 500
                 app.logger.info(f"{endpoint_name}: Responding with JSON: {json.dumps(response_payload)}")
-                return jsonify(response_payload), 500
+                return jsonify(response_payload), http_status_code
         
-        if current_run.status == 'completed':
+        final_run_status = current_run.status # Actualizar estado final del run
+
+        if final_run_status == 'completed':
             app.logger.info(f"{endpoint_name}: Main Auditor-Orchestrator Run {current_run.id} on thread {thread_id} completed.")
             messages = client.beta.threads.messages.list(thread_id=thread_id, order='desc', limit=10)
-            assistant_response = "No new response from Main Auditor-Orchestrator for this run." 
-            for msg in messages.data:
-                if msg.run_id == current_run.id and msg.role == "assistant":
-                    if msg.content:
-                        assistant_response_parts = []
-                        for content_block in msg.content:
-                             if content_block.type == 'text':
-                                assistant_response_parts.append(content_block.text.value)
-                        assistant_response = "\n".join(assistant_response_parts).strip()
-                        break
             
-            app.logger.info(f"{endpoint_name}: Main Auditor-Orchestrator final response for run {current_run.id} on thread {thread_id}: \"{assistant_response[:200]}...\"")
-            assistant_response_for_storage = assistant_response 
-            store_conversation_turn(thread_id, user_message_content, assistant_response_for_storage, endpoint_name, current_run.id, "MainAuditOrchestrator")
-            response_payload = {"response": assistant_response, "thread_id": thread_id, "run_id": current_run.id, "run_status": current_run.status}
-            app.logger.info(f"{endpoint_name}: Responding with JSON: {json.dumps(response_payload)}")
-            return jsonify(response_payload)
-        
-        else: 
-            app.logger.error(f"{endpoint_name}: Main Auditor-Orchestrator Run {current_run.id} on thread {thread_id} ended with unhandled/final status: {current_run.status}. Last error: {current_run.last_error}")
-            error_details = str(current_run.last_error.message) if current_run.last_error else f"Run ended in status {current_run.status}."
-            assistant_response_for_storage = f"Main Auditor-Orchestrator Run ended with status: {current_run.status}. Details: {error_details}"
-            store_conversation_turn(thread_id, user_message_content, assistant_response_for_storage, endpoint_name, current_run.id, "MainAuditOrchestratorError")
-            response_payload = {"error": f"Main Auditor-Orchestrator Run ended with status: {current_run.status}", "details": error_details, "thread_id": thread_id, "run_id": current_run.id}
-            app.logger.info(f"{endpoint_name}: Responding with JSON: {json.dumps(response_payload)}")
-            return jsonify(response_payload), 500
+            assistant_response_text, citations_extracted = process_assistant_message_with_citations(messages.data, current_run.id, endpoint_name)
+            
+            assistant_response_for_storage = assistant_response_text
+            citations_for_storage = citations_extracted
 
+            store_conversation_turn(thread_id, user_message_content, assistant_response_for_storage, endpoint_name, current_run.id, "MainAuditOrchestrator", citations=citations_for_storage)
+            response_payload = {
+                "response": assistant_response_text, 
+                "citations": citations_extracted,
+                "thread_id": thread_id, 
+                "run_id": current_run.id, 
+                "run_status": final_run_status
+            }
+            http_status_code = 200
+        
+        else: # 'failed', 'cancelled', 'expired', etc.
+            app.logger.error(f"{endpoint_name}: Main Auditor-Orchestrator Run {current_run.id} on thread {thread_id} ended with unhandled/final status: {final_run_status}. Last error: {current_run.last_error}")
+            error_details_obj = current_run.last_error
+            error_message = "An unexpected error occurred."
+            if error_details_obj:
+                error_message = f"Error Code: {error_details_obj.code}. Message: {error_details_obj.message}"
+            else:
+                error_message = f"Run ended in status {final_run_status} without specific error details."
+
+            assistant_response_for_storage = f"Main Auditor-Orchestrator Run ended with status: {final_run_status}. Details: {error_message}"
+            store_conversation_turn(thread_id, user_message_content, assistant_response_for_storage, endpoint_name, current_run.id, "MainAuditOrchestratorError")
+            response_payload = {"error": f"Main Auditor-Orchestrator Run ended with status: {final_run_status}", "details": error_message, "thread_id": thread_id, "run_id": current_run.id, "run_status": final_run_status}
+            http_status_code = 500
+
+        app.logger.info(f"{endpoint_name}: Responding to client with JSON: {json.dumps(response_payload)}")
+        return jsonify(response_payload), http_status_code
+
+    except openai.APIConnectionError as e:
+        app.logger.error(f"{endpoint_name}: OpenAI APIConnectionError: {e}", exc_info=True)
+        response_payload = {"error": "Failed to connect to OpenAI API.", "details": str(e)}
+        http_status_code = 503
+    except openai.RateLimitError as e:
+        app.logger.error(f"{endpoint_name}: OpenAI RateLimitError: {e}", exc_info=True)
+        response_payload = {"error": "Rate limit exceeded for OpenAI API.", "details": str(e)}
+        http_status_code = 429
+    except openai.APIStatusError as e: # More generic OpenAI API errors
+        app.logger.error(f"{endpoint_name}: OpenAI APIStatusError: status={e.status_code}, response={e.response}, message={e.message}", exc_info=True)
+        response_payload = {"error": f"OpenAI API error (status {e.status_code}).", "details": e.message}
+        http_status_code = e.status_code if e.status_code else 500
     except Exception as e:
         app.logger.error(f"{endpoint_name}: An unexpected error occurred in Main Auditor-Orchestrator endpoint: {e}", exc_info=True)
-        _thread_id_for_except_log = data_from_request.get('thread_id') if data_from_request else thread_id
-        if user_message_content is not None : 
-             store_conversation_turn(_thread_id_for_except_log, user_message_content, f"Unhandled API Exception: {str(e)}", endpoint_name, current_run_id_for_storage, "MainAuditOrchestratorException")
-        response_payload = {"error": f"An internal server error occurred: {str(e)}", "thread_id": _thread_id_for_except_log}
-        app.logger.info(f"{endpoint_name}: Responding with JSON: {json.dumps(response_payload)}")
-        return jsonify(response_payload), 500
+        error_message_for_response = f"An internal server error occurred: {str(e)}"
+        response_payload = {"error": error_message_for_response}
+        http_status_code = 500
+    
+    # Asegurar que thread_id se incluya en la respuesta de error si está disponible
+    _thread_id_for_except_log = data_from_request.get('thread_id') if data_from_request else thread_id
+    if 'thread_id' not in response_payload and _thread_id_for_except_log:
+        response_payload['thread_id'] = _thread_id_for_except_log
+    if 'run_id' not in response_payload and current_run_id_for_storage:
+        response_payload['run_id'] = current_run_id_for_storage
+    if 'run_status' not in response_payload and final_run_status:
+        response_payload['run_status'] = final_run_status
+
+
+    # Guardar el turno de conversación incluso en caso de error, si es posible
+    if user_message_content is not None: # Solo si el mensaje del usuario fue procesado
+        assistant_error_response = response_payload.get("error", "Unhandled API Exception")
+        if response_payload.get("details"):
+             assistant_error_response += f" Details: {response_payload.get('details')}"
+        store_conversation_turn(_thread_id_for_except_log, user_message_content, assistant_error_response, endpoint_name, current_run_id_for_storage, "MainAuditOrchestratorException", citations_for_storage)
+    
+    app.logger.info(f"{endpoint_name}: Responding with JSON error: {json.dumps(response_payload)}")
+    return jsonify(response_payload), http_status_code
+
 
 # --- Endpoint para el Asistente Experto en Sostenibilidad Directo ---
 @app.route('/chat_assistant', methods=['POST'])
-def chat_with_sustainability_expert(): 
+def chat_with_sustainability_expert():
     endpoint_name = "/chat_assistant"
     app.logger.info(f"Received request for {endpoint_name} (Sustainability Expert) endpoint from {request.remote_addr}")
-    user_message_content = None 
+    user_message_content = None
     thread_id = None
     data_from_request = None
     assistant_response_for_storage = "Error or no response generated by Sustainability Expert."
+    citations_for_storage = []
     sustainability_run_id_for_storage = None
     response_payload = {}
+    http_status_code = 200
+    final_run_status = "unknown"
 
     try:
         data_from_request = request.json
         if not data_from_request:
             app.logger.warning(f"{endpoint_name}: Request is not JSON or empty.")
             response_payload = {"error": "Invalid request: payload must be JSON."}
+            http_status_code = 400
             app.logger.info(f"{endpoint_name}: Responding with JSON: {json.dumps(response_payload)}")
-            return jsonify(response_payload), 400
+            return jsonify(response_payload), http_status_code
 
         user_message_content = data_from_request.get('message')
         thread_id = data_from_request.get('thread_id')
+        # attachments = data_from_request.get('attachments') # Para uso futuro
 
         app.logger.info(f"{endpoint_name}: Request data: message='{user_message_content}', thread_id='{thread_id}'")
         if not user_message_content:
             app.logger.warning(f"{endpoint_name}: No message provided in the request.")
             response_payload = {"error": "No message provided"}
+            http_status_code = 400
             app.logger.info(f"{endpoint_name}: Responding with JSON: {json.dumps(response_payload)}")
-            return jsonify(response_payload), 400
+            return jsonify(response_payload), http_status_code
 
         app.logger.info(f"{endpoint_name}: Attempting to interact with Sustainability Expert ({SUSTAINABILITY_EXPERT_ASSISTANT_ID}) for thread: {thread_id or 'New Thread'}")
         
@@ -390,57 +540,108 @@ def chat_with_sustainability_expert():
             except Exception as e:
                 app.logger.error(f"{endpoint_name}: Failed to retrieve existing Sustainability Expert thread {thread_id}: {e}", exc_info=True)
                 response_payload = {"error": f"Invalid or inaccessible thread_id for Sustainability Expert: {thread_id}", "details": str(e)}
+                http_status_code = 400
                 app.logger.info(f"{endpoint_name}: Responding with JSON: {json.dumps(response_payload)}")
-                return jsonify(response_payload), 400
+                return jsonify(response_payload), http_status_code
         
-        client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message_content)
+        client.beta.threads.messages.create(
+            thread_id=thread_id, 
+            role="user", 
+            content=user_message_content
+            # attachments=attachments if attachments else None # Ejemplo
+        )
         app.logger.info(f"{endpoint_name}: Added user message to Sustainability Expert thread {thread_id}: \"{user_message_content}\"")
 
         app.logger.info(f"{endpoint_name}: Creating run for Sustainability Expert ({SUSTAINABILITY_EXPERT_ASSISTANT_ID}) on thread {thread_id}")
         sustainability_run = client.beta.threads.runs.create_and_poll(
             thread_id=thread_id,
             assistant_id=SUSTAINABILITY_EXPERT_ASSISTANT_ID,
-            instructions=f"Please answer the user's latest question: \"{user_message_content}\""
+            instructions=f"Please answer the user's latest question: \"{user_message_content}\"",
+            # timeout=60 # Ejemplo de timeout para create_and_poll (en segundos)
         )
         sustainability_run_id_for_storage = sustainability_run.id
-        app.logger.info(f"{endpoint_name}: Sustainability Expert Run {sustainability_run_id_for_storage} on thread {thread_id} completed with status: {sustainability_run.status}")
+        final_run_status = sustainability_run.status
+        app.logger.info(f"{endpoint_name}: Sustainability Expert Run {sustainability_run_id_for_storage} on thread {thread_id} polling completed with status: {final_run_status}")
 
-        if sustainability_run.status == 'completed':
+        if final_run_status == 'completed':
             messages = client.beta.threads.messages.list(thread_id=thread_id, order='desc', limit=10)
-            assistant_response = "No new response from Sustainability Expert for this run."
-            for msg in messages.data:
-                if msg.run_id == sustainability_run_id_for_storage and msg.role == "assistant": 
-                    if msg.content:
-                        assistant_response_parts = []
-                        for content_block in msg.content:
-                            if content_block.type == 'text':
-                                assistant_response_parts.append(content_block.text.value)
-                        assistant_response = "\n".join(assistant_response_parts).strip()
-                        break
             
-            app.logger.info(f"{endpoint_name}: Sustainability Expert final response for run {sustainability_run_id_for_storage} on thread {thread_id}: \"{assistant_response[:200]}...\"")
-            assistant_response_for_storage = assistant_response 
-            store_conversation_turn(thread_id, user_message_content, assistant_response_for_storage, endpoint_name, sustainability_run_id_for_storage, "SustainabilityExpert")
-            response_payload = {"response": assistant_response, "thread_id": thread_id, "run_id": sustainability_run_id_for_storage, "run_status": sustainability_run.status}
-            app.logger.info(f"{endpoint_name}: Responding with JSON: {json.dumps(response_payload)}")
-            return jsonify(response_payload)
-        else:
-            app.logger.error(f"{endpoint_name}: Sustainability Expert Run {sustainability_run_id_for_storage} on thread {thread_id} ended with status: {sustainability_run.status}. Last error: {sustainability_run.last_error}")
-            error_details = str(sustainability_run.last_error.message) if sustainability_run.last_error else "No specific error details."
-            assistant_response_for_storage = f"Sustainability Expert Run ended with status: {sustainability_run.status}. Details: {error_details}"
-            store_conversation_turn(thread_id, user_message_content, assistant_response_for_storage, endpoint_name, sustainability_run_id_for_storage, "SustainabilityExpertError")
-            response_payload = {"error": f"Sustainability Expert Run ended with status: {sustainability_run.status}", "details": error_details, "thread_id": thread_id, "run_id": sustainability_run_id_for_storage}
-            app.logger.info(f"{endpoint_name}: Responding with JSON: {json.dumps(response_payload)}")
-            return jsonify(response_payload), 500
+            assistant_response_text, citations_extracted = process_assistant_message_with_citations(messages.data, sustainability_run_id_for_storage, endpoint_name)
 
-    except Exception as e:
-        app.logger.error(f"{endpoint_name}: An unexpected error occurred: {e}", exc_info=True)
-        _thread_id_for_except_log = data_from_request.get('thread_id') if data_from_request else thread_id
-        if user_message_content is not None:
-            store_conversation_turn(_thread_id_for_except_log, user_message_content, f"Unhandled API Exception: {str(e)}", endpoint_name, sustainability_run_id_for_storage, "SustainabilityExpertException")
-        response_payload = {"error": f"An internal server error occurred: {str(e)}", "thread_id": _thread_id_for_except_log}
+            app.logger.info(f"{endpoint_name}: Sustainability Expert final response for run {sustainability_run_id_for_storage} on thread {thread_id}: \"{assistant_response_text[:200]}...\"")
+            assistant_response_for_storage = assistant_response_text
+            citations_for_storage = citations_extracted
+
+            store_conversation_turn(thread_id, user_message_content, assistant_response_for_storage, endpoint_name, sustainability_run_id_for_storage, "SustainabilityExpert", citations=citations_for_storage)
+            response_payload = {
+                "response": assistant_response_text, 
+                "citations": citations_extracted,
+                "thread_id": thread_id, 
+                "run_id": sustainability_run_id_for_storage, 
+                "run_status": final_run_status
+            }
+            http_status_code = 200
+        else: # 'failed', 'cancelled', 'expired', 'requires_action' (inesperado con create_and_poll si no hay tools)
+            app.logger.error(f"{endpoint_name}: Sustainability Expert Run {sustainability_run_id_for_storage} on thread {thread_id} ended with status: {final_run_status}. Last error: {sustainability_run.last_error}")
+            error_details_obj = sustainability_run.last_error
+            error_message = "An unexpected error occurred with the Sustainability Expert."
+            if error_details_obj:
+                error_message = f"Error Code: {error_details_obj.code}. Message: {error_details_obj.message}"
+            elif final_run_status == 'requires_action': # Esto sería inesperado si el asistente no tiene tools habilitadas
+                 error_message = f"Run ended in 'requires_action' status unexpectedly. This assistant might require tool configuration."
+            else:
+                error_message = f"Run ended in status {final_run_status} without specific error details."
+            
+            assistant_response_for_storage = f"Sustainability Expert Run ended with status: {final_run_status}. Details: {error_message}"
+            store_conversation_turn(thread_id, user_message_content, assistant_response_for_storage, endpoint_name, sustainability_run_id_for_storage, "SustainabilityExpertError")
+            response_payload = {"error": f"Sustainability Expert Run ended with status: {final_run_status}", "details": error_message, "thread_id": thread_id, "run_id": sustainability_run_id_for_storage, "run_status": final_run_status}
+            http_status_code = 500
+        
         app.logger.info(f"{endpoint_name}: Responding with JSON: {json.dumps(response_payload)}")
-        return jsonify(response_payload), 500
+        return jsonify(response_payload), http_status_code
+
+    except openai.APIConnectionError as e:
+        app.logger.error(f"{endpoint_name}: OpenAI APIConnectionError: {e}", exc_info=True)
+        response_payload = {"error": "Failed to connect to OpenAI API.", "details": str(e)}
+        http_status_code = 503
+    except openai.RateLimitError as e:
+        app.logger.error(f"{endpoint_name}: OpenAI RateLimitError: {e}", exc_info=True)
+        response_payload = {"error": "Rate limit exceeded for OpenAI API.", "details": str(e)}
+        http_status_code = 429
+    except openai.APIStatusError as e: # More generic OpenAI API errors
+        app.logger.error(f"{endpoint_name}: OpenAI APIStatusError: status={e.status_code}, response={e.response}, message={e.message}", exc_info=True)
+        response_payload = {"error": f"OpenAI API error (status {e.status_code}).", "details": e.message}
+        http_status_code = e.status_code if e.status_code else 500
+    except Exception as e: # Captura otras excepciones como timeouts de create_and_poll
+        app.logger.error(f"{endpoint_name}: An unexpected error occurred: {e}", exc_info=True)
+        error_message_for_response = f"An internal server error occurred: {str(e)}"
+        # Verificar si es un timeout de la librería de OpenAI
+        if "timed out" in str(e).lower() and sustainability_run_id_for_storage: # Puede ser un timeout de la librería
+            final_run_status = "timed_out_library" # Estado personalizado
+            error_message_for_response = f"The request to the Sustainability Expert timed out. Run ID: {sustainability_run_id_for_storage}"
+            http_status_code = 504 # Gateway Timeout
+        else:
+            http_status_code = 500
+        response_payload = {"error": error_message_for_response}
+
+    # Asegurar que thread_id se incluya en la respuesta de error si está disponible
+    _thread_id_for_except_log = data_from_request.get('thread_id') if data_from_request else thread_id
+    if 'thread_id' not in response_payload and _thread_id_for_except_log:
+        response_payload['thread_id'] = _thread_id_for_except_log
+    if 'run_id' not in response_payload and sustainability_run_id_for_storage:
+        response_payload['run_id'] = sustainability_run_id_for_storage
+    if 'run_status' not in response_payload and final_run_status: # Asegurar que run_status esté
+        response_payload['run_status'] = final_run_status
+
+    if user_message_content is not None:
+        assistant_error_response = response_payload.get("error", "Unhandled API Exception")
+        if response_payload.get("details"):
+             assistant_error_response += f" Details: {response_payload.get('details')}"
+        store_conversation_turn(_thread_id_for_except_log, user_message_content, assistant_error_response, endpoint_name, sustainability_run_id_for_storage, "SustainabilityExpertException", citations_for_storage)
+    
+    app.logger.info(f"{endpoint_name}: Responding with JSON error: {json.dumps(response_payload)}")
+    return jsonify(response_payload), http_status_code
+
 
 # --- Health Check Endpoint ---
 @app.route('/health', methods=['GET'])
@@ -448,7 +649,9 @@ def health_check():
     app.logger.info("Health check endpoint was called.")
     response_payload = {}
     try:
-        pass 
+        # Podrías añadir una prueba simple de conectividad con OpenAI aquí si es necesario
+        # client.models.list(limit=1) 
+        pass
     except Exception as e:
         app.logger.error(f"Health check: Potential backend connectivity issue. Error: {e}", exc_info=True)
         response_payload = {"status": "unhealthy", "reason": "Potential backend connectivity issue"}
@@ -460,5 +663,10 @@ def health_check():
     return jsonify(response_payload), 200
 
 if __name__ == '__main__':
-    app.logger.info("Starting Flask development server with debug mode.")
-    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
+    # No es recomendable usar app.run(debug=True) en producción.
+    # Gunicorn u otro servidor WSGI es preferible.
+    # El puerto se toma de la variable de entorno PORT, común en Cloud Run.
+    port = int(os.environ.get("PORT", 8080)) # Default a 8080 para desarrollo local si PORT no está seteado
+    debug_mode = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
+    app.logger.info(f"Starting Flask server on port {port} with debug mode: {debug_mode}")
+    app.run(debug=debug_mode, host='0.0.0.0', port=port)
