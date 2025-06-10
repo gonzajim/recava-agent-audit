@@ -149,18 +149,18 @@
         .assistant-message .main-assistant-text p { margin-bottom: 0.5rem; }
         .assistant-message .main-assistant-text p:last-child { margin-bottom: 0; }
 
-        /* Estilos para Citas */
+        /* Estilos para Citas (se mantienen por si se reactivan, pero no se usarán si el backend no las envía) */
         .citations-container {
             margin-top: 0.8rem;
             border-top: 1px dashed #ced4da;
             padding-top: 0.8rem;
         }
         .citation-item {
-            font-size: 0.8rem; /* Ligeramente más grande que source-chunk original */
+            font-size: 0.8rem; 
             color: var(--texto-gris-medio);
             background-color: #fdfdfd;
             padding: 0.6rem 0.8rem;
-            border: 1px solid #e9ecef; /* Borde más sutil */
+            border: 1px solid #e9ecef; 
             border-radius: 5px;
             margin-bottom: 0.5rem;
             line-height: 1.4;
@@ -173,9 +173,9 @@
         .citation-item .citation-quote {
             font-style: italic;
             color: #555;
-            display: block; /* Para que ocupe su propia línea si es largo */
+            display: block; 
             margin-top: 0.2em;
-             max-height: 100px; /* Limitar altura y mostrar scroll si es muy largo */
+             max-height: 100px; 
             overflow-y: auto;
             border-left: 3px solid var(--uclm-rojo-principal);
             padding-left: 0.5em;
@@ -198,7 +198,6 @@
             gap: 0.6rem;
             padding: 0.5rem 1.5rem 0.8rem 1.5rem;
             width: 100%;
-            /* border-bottom: 1px solid var(--borde-general); */ /* Quitado para que no haya doble línea con mensajes */
             margin-bottom: 0.5rem;
         }
 
@@ -254,20 +253,22 @@
 
         #input-controls {
             display: flex;
-            align-items: center;
+            align-items: center; /* Alinea verticalmente los elementos si el textarea crece */
             gap: 0.6rem;
         }
 
-        #user-input {
+        #user-input { /* Cambiado de input a textarea */
             flex-grow: 1;
             padding: 0.7rem 0.9rem;
             border: 1px solid var(--borde-input);
             border-radius: 6px;
             font-size: 0.95rem;
+            font-family: var(--fuente-principal); /* Heredar fuente */
             color: var(--texto-oscuro-principal);
-            resize: none;
-            overflow-y: hidden;
-            min-height: 40px;
+            resize: none; /* Evitar que el usuario redimensione manualmente */
+            overflow-y: hidden; /* Ocultar barra de scroll vertical inicialmente */
+            min-height: 40px; /* Altura mínima igual a los botones */
+            line-height: 1.4; /* Ajustar para mejor legibilidad en multilínea */
         }
         #user-input::placeholder { color: var(--texto-gris-sutil); }
         #user-input:focus {
@@ -292,8 +293,8 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            flex-shrink: 0;
-            height: 40px;
+            flex-shrink: 0; /* Evitar que se encojan */
+            height: 40px; /* Misma altura que el min-height del textarea */
         }
         #attach-file-button {
             width: 40px;
@@ -319,8 +320,8 @@
         .typing-indicator {
             font-style: italic;
             color: var(--texto-gris-sutil);
-            padding: 0.8rem 1.1rem; /* Mismo padding que un mensaje normal */
-            background-color: var(--mensaje-asistente-fondo); /* Mismo fondo que asistente */
+            padding: 0.8rem 1.1rem; 
+            background-color: var(--mensaje-asistente-fondo); 
             border-radius: 10px;
             align-self: flex-start;
         }
@@ -359,7 +360,7 @@
             #user-input {
                 padding: 0.6rem 0.8rem;
                 font-size: 0.9rem;
-                min-height: 38px;
+                min-height: 38px; /* Ajustar para móviles */
             }
             
             .mode-button-container {
@@ -432,30 +433,36 @@
 
             function adjustUserInputHeight() {
                 if (!userInputEl) return;
-                userInputEl.style.height = 'auto';
-                userInputEl.style.height = userInputEl.scrollHeight + 'px';
+                userInputEl.style.height = 'auto'; // Reset height to shrink if text is deleted
+                let scrollHeight = userInputEl.scrollHeight;
+                const maxHeight = 120; // Máximo 120px (aprox 5-6 líneas)
+                if (scrollHeight > maxHeight) {
+                    userInputEl.style.height = maxHeight + 'px';
+                    userInputEl.style.overflowY = 'auto'; // Mostrar scroll si supera el máximo
+                } else {
+                    userInputEl.style.height = scrollHeight + 'px';
+                    userInputEl.style.overflowY = 'hidden'; // Ocultar scroll si no supera
+                }
             }
 
             if (userInputEl) {
                 userInputEl.addEventListener('input', adjustUserInputHeight);
-                adjustUserInputHeight();
+                // Llamada inicial por si hay texto precargado (aunque no es el caso aquí)
+                adjustUserInputHeight(); 
             }
 
-            // Reemplaza con tus URLs de backend reales si son diferentes o si usas un proxy
+            // URLs de los endpoints (asegúrate de que sean correctas para tu entorno)
             const AUDITOR_ENDPOINT_URL = 'https://orchestrator-520199812528.europe-west1.run.app/chat_auditor'; 
             const ADVISOR_ENDPOINT_URL = 'https://orchestrator-520199812528.europe-west1.run.app/chat_assistant';
-            // const UPLOAD_FILE_ENDPOINT_URL = '/api/upload_file_to_openai'; // Ya no se usa para la subida directa desde el frontend en este flujo.
 
             let currentChatMode = null;
             let currentChatThreadId = null;
-            let currentSelectedFile = null;
-            // let uploadedFileIdForChat = null; // No se usa directamente para el payload, ya que las citas vienen del backend.
+            let currentSelectedFile = null; 
             let modeSelectionContainer = null; 
 
             function initializeChatInterface() {
                 console.log("Chat initializing. Awaiting mode selection.");
-                // Mensaje inicial y botones de modo
-                addAssistantMessageInternal("¡Hola! Somos tus auditores legales especializados en sostenibilidad empresarial y diligencia debida. Guiaremos el proceso de auditoría.<br>Elige el modo en el que quieres interactuar:", null); // No hay citas para este mensaje
+                addAssistantMessageInternal("¡Hola! Somos tus auditores legales especializados en sostenibilidad empresarial y diligencia debida. Guiaremos el proceso de auditoría.<br>Elige el modo en el que quieres interactuar:", null);
                 
                 modeSelectionContainer = document.createElement('div');
                 modeSelectionContainer.className = 'mode-button-container';
@@ -471,8 +478,7 @@
 
                 if(sendButtonEl) sendButtonEl.disabled = true;
                 if(attachFileButtonEl) {
-                    attachFileButtonEl.disabled = true; // Deshabilitado hasta que se seleccione modo
-                    // attachFileButtonEl.title = "Adjuntar archivo (Funcionalidad RAG FileSearch se activa en el backend)";
+                    attachFileButtonEl.disabled = true; 
                 }
                 if(userInputEl) userInputEl.placeholder = "Selecciona un modo para comenzar...";
             }
@@ -488,14 +494,14 @@
                 
                 if(sendButtonEl) sendButtonEl.disabled = false;
                 if(attachFileButtonEl) {
-                    attachFileButtonEl.disabled = false; // Habilitar adjuntar archivo
+                    attachFileButtonEl.disabled = false; 
                 }
                 if(userInputEl) {
                     userInputEl.value = '';
                     userInputEl.focus();
-                    adjustUserInputHeight();
+                    adjustUserInputHeight(); // Ajustar altura después de limpiar
                 }
-                currentChatThreadId = null; // Reset thread for new mode or new conversation
+                currentChatThreadId = null; 
                 clearSelectedFileUI();
                 console.log("Thread ID has been reset for the new mode.");
 
@@ -510,53 +516,21 @@
             
             if (attachFileButtonEl) {
                 attachFileButtonEl.addEventListener('click', () => {
-                    // La subida real y asociación de archivos para RAG (File Search) ocurre en el backend
-                    // cuando el asistente lo necesita. Este botón es más bien una indicación UI
-                    // de que el usuario PUEDE querer referirse a un archivo.
-                    // Por ahora, solo mantenemos la lógica de selección de archivo si se quisiera enviar
-                    // el archivo al backend (lo cual ya no es el flujo principal para el RAG de Assistants API)
-                    // if(fileInputEl && !attachFileButtonEl.disabled) fileInputEl.click();
                     addSystemMessageToChat("La funcionalidad de adjuntar archivos para 'File Search' se gestiona automáticamente por el asistente. Si necesitas que analice un archivo específico, menciónalo en tu consulta después de haberlo subido a la plataforma del asistente (fuera de este chat) o si el asistente te lo solicita.");
                 });
             }
-
-            // La lógica de fileInputEl, fileNamePreviewEl, etc., podría eliminarse si no se envían archivos desde el frontend
-            // y todo el RAG se basa en archivos ya asociados al Asistente en la plataforma de OpenAI.
-            // Por ahora, la mantendré comentada por si se reactiva una subida directa.
-            /*
-            if (fileInputEl) {
-                fileInputEl.addEventListener('change', (event) => {
-                    const file = event.target.files[0];
-                    if (file) {
-                        currentSelectedFile = file;
-                        if(fileNamePreviewEl) fileNamePreviewEl.textContent = currentSelectedFile.name;
-                        if(filePreviewAreaEl) filePreviewAreaEl.classList.remove('hidden');
-                        console.log("Archivo seleccionado (no se subirá automáticamente):", currentSelectedFile.name);
-                    }
-                    if(fileInputEl) fileInputEl.value = null; // Reset para permitir seleccionar mismo archivo
-                });
-            }
-
-            if (removeFileButtonEl) {
-                removeFileButtonEl.addEventListener('click', clearSelectedFileUI);
-            }
-            */
-
+            
             function clearSelectedFileUI() {
                 currentSelectedFile = null;
-                // uploadedFileIdForChat = null;
                 if(fileNamePreviewEl) fileNamePreviewEl.textContent = '';
                 if(filePreviewAreaEl) filePreviewAreaEl.classList.add('hidden');
                 if(fileInputEl) fileInputEl.value = null; 
                 console.log("Selección de archivo local limpiada.");
             }
 
-            // Función simulateOrRealUploadFile ya no es necesaria aquí, 
-            // la subida de archivos para RAG es manejada por OpenAI Assistants.
-
             async function handleSendMessageToServer() {
                 const messageText = userInputEl.value.trim();
-                if (!messageText) { // Ya no se verifica !selectedFile porque no se sube directamente
+                if (!messageText) { 
                     addSystemMessageToChat("Por favor, escribe un mensaje.");
                     return;
                 }
@@ -567,17 +541,13 @@
 
                 addUserMessageToChat(messageText);
                 userInputEl.value = '';
-                adjustUserInputHeight();
+                adjustUserInputHeight(); // Ajustar altura después de enviar
                 showTypingIndicatorToChat();
 
                 const endpointUrl = currentChatMode === 'auditor' ? AUDITOR_ENDPOINT_URL : ADVISOR_ENDPOINT_URL;
-                // Los 'attachments' ahora se manejan del lado del servidor si el asistente está configurado para File Search.
-                // No necesitamos enviar file_id desde el cliente a menos que lo hayamos subido explícitamente
-                // a través de otro endpoint y queramos pasarlo.
                 const payloadToBackend = {
                     message: messageText,
                     thread_id: currentChatThreadId,
-                    // attachments: [] // Se puede omitir si el asistente usa File Search sobre archivos ya subidos
                 };
                 
                 console.log("Payload a enviar al backend:", JSON.stringify(payloadToBackend));
@@ -596,7 +566,7 @@
                         console.error("Error API desde el backend:", errorData);
                         if (response.status === 400 && errorData.error && typeof errorData.error === 'string' && errorData.error.toLowerCase().includes("thread_id")) {
                             addSystemMessageToChat("Hubo un problema con la sesión actual. Intentando iniciar una nueva sesión...");
-                            currentChatThreadId = null; // Resetear thread_id para forzar uno nuevo en el siguiente mensaje
+                            currentChatThreadId = null; 
                         }
                         return;
                     }
@@ -610,8 +580,9 @@
                     }
 
                     if (dataFromBackend.response) {
-                        // La respuesta ya contiene el texto con marcadores y una lista de citas
-                        addAssistantMessageWithCitations(dataFromBackend.response, dataFromBackend.citations || []);
+                        // MODIFICACIÓN: Limpiar los marcadores 【...†source】 del texto de la respuesta
+                        const cleanedResponseText = dataFromBackend.response.replace(/【.*?†source】/g, '').trim();
+                        addAssistantMessageWithCitations(cleanedResponseText, dataFromBackend.citations || []);
                     } else if (dataFromBackend.error) {
                         addSystemMessageToChat(`Error del asistente: ${dataFromBackend.error} ${dataFromBackend.details || ''}`);
                     } else {
@@ -621,15 +592,13 @@
                     removeTypingIndicatorFromChat();
                     addSystemMessageToChat("Error de conexión con el servidor. Por favor, inténtalo de nuevo más tarde.");
                     console.error("Error en fetch:", error);
-                } finally {
-                    // clearSelectedFileUI(); // Limpiar selección de archivo local, si la hubiera.
                 }
             }
             
             function addMessageToChatDOM(htmlContent, cssClass) {
                 const messageElement = document.createElement('div');
                 messageElement.classList.add('message', cssClass);
-                messageElement.innerHTML = htmlContent; // Asumimos que htmlContent ya está sanitizado o es seguro (e.g., de marked.parse)
+                messageElement.innerHTML = htmlContent; 
                 
                 if(chatMessagesEl) {
                     chatMessagesEl.appendChild(messageElement);
@@ -638,7 +607,6 @@
             }
             
             function addUserMessageToChat(text) {
-                // Escapar HTML simple para el mensaje del usuario antes de mostrarlo
                 const escapedText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
                 addMessageToChatDOM(escapedText, 'user-message');
             }
@@ -648,18 +616,18 @@
                 addMessageToChatDOM(escapedText, 'system-message');
             }
             
-            // Función para añadir mensaje del asistente con citas
-            function addAssistantMessageWithCitations(responseTextWithMarkers, citationsList) {
+            function addAssistantMessageWithCitations(responseText, citationsList) { // Renombrado para claridad
                 const messageWrapper = document.createElement('div');
                 messageWrapper.classList.add('message', 'assistant-message');
 
                 const mainTextDiv = document.createElement('div');
                 mainTextDiv.classList.add('main-assistant-text');
-                // El responseTextWithMarkers ya debería tener los [N]
-                // Usamos marked.parse para convertir Markdown a HTML
-                mainTextDiv.innerHTML = marked.parse(responseTextWithMarkers || "El asistente no proporcionó una respuesta textual."); 
+                // `responseText` ya viene limpio de 【...†source】
+                mainTextDiv.innerHTML = marked.parse(responseText || "El asistente no proporcionó una respuesta textual."); 
                 messageWrapper.appendChild(mainTextDiv);
                 
+                // La lógica para mostrar citationsList se mantiene, pero no se usará
+                // si el backend no envía la clave 'citations' o la envía vacía.
                 if (citationsList && citationsList.length > 0) {
                     const citationsContainerDiv = document.createElement('div');
                     citationsContainerDiv.classList.add('citations-container');
@@ -669,14 +637,10 @@
                         citationDiv.classList.add('citation-item');
                         
                         let citationHTML = `<span class="citation-marker">${citation.marker || '[?]'}</span>`;
-                        // citationHTML += ` Referencia de: <i>${citation.text_in_response || 'parte del texto'}</i><br>`; // Opcional: mostrar el texto original que fue citado
                         citationHTML += `<span class="citation-quote">${escapeHtml(citation.quote_from_file || 'Contenido de la cita no disponible.')}</span>`;
                         if (citation.file_id) {
                              citationHTML += `<span class="citation-file-id">ID Archivo: ${escapeHtml(citation.file_id)}</span>`;
                         }
-                        // if (citation.file_name) { // Si se añade file_name en el backend
-                        //    citationHTML += `<span class="citation-file-name">Nombre Archivo: ${escapeHtml(citation.file_name)}</span>`;
-                        // }
                         citationDiv.innerHTML = citationHTML;
                         citationsContainerDiv.appendChild(citationDiv);
                     });
@@ -689,13 +653,12 @@
                 }
             }
 
-            // Wrapper para el mensaje inicial sin citas explícitas
-             function addAssistantMessageInternal(htmlContent, _sourceMatches_not_used_anymore) {
+             function addAssistantMessageInternal(htmlContent, _unusedCitations) {
                 const messageWrapper = document.createElement('div');
                 messageWrapper.classList.add('message', 'assistant-message');
                 const mainTextDiv = document.createElement('div');
                 mainTextDiv.classList.add('main-assistant-text');
-                mainTextDiv.innerHTML = htmlContent; // Ya es HTML
+                mainTextDiv.innerHTML = htmlContent; 
                 messageWrapper.appendChild(mainTextDiv);
                 
                 if(chatMessagesEl) chatMessagesEl.appendChild(messageWrapper);
@@ -713,13 +676,11 @@
                     .replace(/'/g, "&#039;");
             }
 
-            // fetchAndDisplaySource ya no es necesario ya que las citas vienen completas del backend.
-
             let typingIndicatorDiv = null;
             function showTypingIndicatorToChat() {
                 if (typingIndicatorDiv) return; 
                 typingIndicatorDiv = document.createElement('div');
-                typingIndicatorDiv.classList.add('message', 'assistant-message', 'typing-indicator'); // Reusar clase para estilo base
+                typingIndicatorDiv.classList.add('message', 'assistant-message', 'typing-indicator'); 
                 typingIndicatorDiv.textContent = "Generando una respuesta, espere unos segundos...";
                 if(chatMessagesEl) {
                     chatMessagesEl.appendChild(typingIndicatorDiv);
@@ -739,11 +700,13 @@
             }
             if (userInputEl) {
                 userInputEl.addEventListener('keypress', function(event) {
-                    if (event.key === 'Enter' && !event.shiftKey && sendButtonEl && !sendButtonEl.disabled) {
-                        event.preventDefault();
+                    if (event.key === 'Enter' && !event.shiftKey && sendButtonEl && !sendButtonEl.disabled) { // Enviar con Enter (sin Shift)
+                        event.preventDefault(); // Prevenir nueva línea en textarea
                         handleSendMessageToServer();
                     }
                 });
+                // Ajustar altura al cargar la página si hay contenido (poco probable aquí)
+                adjustUserInputHeight();
             }
             
             initializeChatInterface();

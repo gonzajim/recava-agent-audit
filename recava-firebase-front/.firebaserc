@@ -1,6 +1,24 @@
 {
+  "projects": {},
+  "targets": {
+    "recava-auditor": {
+      "hosting": {
+        "prod": [
+          "recava-agent-audit"
+        ]
+      }
+    },
+    "recava-audit": {
+      "hosting": {
+        "dev": [
+          "recava-agent-audit-dev"
+        ]
+      }
+    }
+  },
+  "etags": {},
   "hosting": {
-    "public": ".", // Directorio actual
+    "public": ".",
     "ignore": [
       "firebase.json",
       "**/.*",
