@@ -17,7 +17,7 @@ steps:
   #   3. Desplegar la nueva imagen en el servicio de Cloud Run especificado.
   # Utiliza la variable ${_SERVICE_NAME} que será proporcionada por el trigger.
   # -------------------------------------------------------------------------------------
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk' 
     id: 'Deploy-Backend-to-Cloud-Run'
     entrypoint: 'gcloud'
     args:
