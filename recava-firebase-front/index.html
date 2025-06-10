@@ -102,7 +102,7 @@
         .message {
             padding: 0.8rem 1.1rem;
             border-radius: 10px;
-            max-width: 85%; /* Ajustado para permitir más espacio a las citas */
+            max-width: 85%;
             line-height: 1.5;
             word-wrap: break-word;
             color: var(--texto-gris-parrafos);
@@ -149,18 +149,18 @@
         .assistant-message .main-assistant-text p { margin-bottom: 0.5rem; }
         .assistant-message .main-assistant-text p:last-child { margin-bottom: 0; }
 
-        /* Estilos para Citas (se mantienen por si se reactivan, pero no se usarán si el backend no las envía) */
+        /* Estilos para Anotaciones/Citas */
         .citations-container {
             margin-top: 0.8rem;
             border-top: 1px dashed #ced4da;
             padding-top: 0.8rem;
         }
         .citation-item {
-            font-size: 0.8rem; 
+            font-size: 0.8rem;
             color: var(--texto-gris-medio);
             background-color: #fdfdfd;
             padding: 0.6rem 0.8rem;
-            border: 1px solid #e9ecef; 
+            border: 1px solid #e9ecef;
             border-radius: 5px;
             margin-bottom: 0.5rem;
             line-height: 1.4;
@@ -173,9 +173,9 @@
         .citation-item .citation-quote {
             font-style: italic;
             color: #555;
-            display: block; 
+            display: block;
             margin-top: 0.2em;
-             max-height: 100px; 
+            max-height: 100px;
             overflow-y: auto;
             border-left: 3px solid var(--uclm-rojo-principal);
             padding-left: 0.5em;
@@ -187,210 +187,29 @@
             margin-top: 0.3em;
         }
 
-
         /* -------------------------------------------------------------------------- */
-        /* BOTONES DE SELECCIÓN DE MODO                                               */
+        /* OTROS ESTILOS (sin cambios)                                                */
         /* -------------------------------------------------------------------------- */
-        .mode-button-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 0.6rem;
-            padding: 0.5rem 1.5rem 0.8rem 1.5rem;
-            width: 100%;
-            margin-bottom: 0.5rem;
-        }
-
-        .mode-button-chat {
-            width: auto;
-            min-width: 180px;
-            padding: 0.6rem 1.5rem;
-            font-size: 0.9rem;
-            font-weight: 500;
-            background-color: var(--uclm-rojo-principal);
-            color: var(--texto-claro);
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: background-color 0.2s ease, transform 0.1s ease;
-            text-align: center;
-        }
-        .mode-button-chat:hover {
-            background-color: var(--uclm-rojo-hover);
-            transform: translateY(-1px);
-        }
-
-        /* -------------------------------------------------------------------------- */
-        /* ÁREA DE INPUT                                                              */
-        /* -------------------------------------------------------------------------- */
-        #input-area-wrapper {
-            padding: 0.8rem 1rem;
-            border-top: 1px solid var(--borde-general);
-            background-color: var(--fondo-input-area);
-            flex-shrink: 0;
-        }
-
-        #file-preview-area {
-            font-size: 0.8rem;
-            color: var(--texto-oscuro-principal);
-            margin-bottom: 0.6rem;
-            padding: 0.5rem 0.7rem;
-            background-color: #e9ecef;
-            border-radius: 6px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        #file-preview-area button.remove-file-button {
-            background: none;
-            border: none;
-            color: var(--uclm-rojo-principal);
-            cursor: pointer;
-            padding: 0.1rem;
-            display: flex;
-        }
+        .mode-button-container { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; padding: 0.5rem 1.5rem 0.8rem 1.5rem; width: 100%; margin-bottom: 0.5rem; }
+        .mode-button-chat { width: auto; min-width: 180px; padding: 0.6rem 1.5rem; font-size: 0.9rem; font-weight: 500; background-color: var(--uclm-rojo-principal); color: var(--texto-claro); border: none; border-radius: 6px; cursor: pointer; transition: background-color 0.2s ease, transform 0.1s ease; text-align: center; }
+        .mode-button-chat:hover { background-color: var(--uclm-rojo-hover); transform: translateY(-1px); }
+        #input-area-wrapper { padding: 0.8rem 1rem; border-top: 1px solid var(--borde-general); background-color: var(--fondo-input-area); flex-shrink: 0; }
+        #file-preview-area { font-size: 0.8rem; color: var(--texto-oscuro-principal); margin-bottom: 0.6rem; padding: 0.5rem 0.7rem; background-color: #e9ecef; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
+        #file-preview-area button.remove-file-button { background: none; border: none; color: var(--uclm-rojo-principal); cursor: pointer; padding: 0.1rem; display: flex; }
         #file-preview-area button.remove-file-button:hover { color: var(--uclm-rojo-hover); }
-
-        #input-controls {
-            display: flex;
-            align-items: center; /* Alinea verticalmente los elementos si el textarea crece */
-            gap: 0.6rem;
-        }
-
-        #user-input { /* Cambiado de input a textarea */
-            flex-grow: 1;
-            padding: 0.7rem 0.9rem;
-            border: 1px solid var(--borde-input);
-            border-radius: 6px;
-            font-size: 0.95rem;
-            font-family: var(--fuente-principal); /* Heredar fuente */
-            color: var(--texto-oscuro-principal);
-            resize: none; /* Evitar que el usuario redimensione manualmente */
-            overflow-y: hidden; /* Ocultar barra de scroll vertical inicialmente */
-            min-height: 40px; /* Altura mínima igual a los botones */
-            line-height: 1.4; /* Ajustar para mejor legibilidad en multilínea */
-        }
+        #input-controls { display: flex; align-items: center; gap: 0.6rem; }
+        #user-input { flex-grow: 1; padding: 0.7rem 0.9rem; border: 1px solid var(--borde-input); border-radius: 6px; font-size: 0.95rem; font-family: var(--fuente-principal); color: var(--texto-oscuro-principal); resize: none; overflow-y: hidden; min-height: 40px; line-height: 1.4; }
         #user-input::placeholder { color: var(--texto-gris-sutil); }
-        #user-input:focus {
-            outline: none;
-            border-color: var(--uclm-rojo-principal);
-            box-shadow: 0 0 0 2px var(--borde-input-focus-sombra);
-        }
-        #user-input:disabled {
-            background-color: #e9ecef;
-            cursor: not-allowed;
-        }
-
-        #attach-file-button,
-        #send-button {
-            padding: 0.6rem;
-            background-color: var(--uclm-rojo-principal);
-            color: var(--texto-claro);
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: background-color 0.2s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0; /* Evitar que se encojan */
-            height: 40px; /* Misma altura que el min-height del textarea */
-        }
-        #attach-file-button {
-            width: 40px;
-        }
-        #send-button {
-            padding-left: 1.2rem;
-            padding-right: 1.2rem;
-            font-weight: 500;
-        }
-
-        #attach-file-button:hover:not(:disabled),
-        #send-button:hover:not(:disabled) {
-            background-color: var(--uclm-rojo-hover);
-        }
-
-        #send-button:disabled,
-        #attach-file-button:disabled {
-            background-color: var(--uclm-rojo-disabled);
-            cursor: not-allowed;
-            opacity: 0.9;
-        }
-
-        .typing-indicator {
-            font-style: italic;
-            color: var(--texto-gris-sutil);
-            padding: 0.8rem 1.1rem; 
-            background-color: var(--mensaje-asistente-fondo); 
-            border-radius: 10px;
-            align-self: flex-start;
-        }
-
-
-        /* -------------------------------------------------------------------------- */
-        /* RESPONSIVIDAD                                                              */
-        /* -------------------------------------------------------------------------- */
-        @media (max-width: 600px) {
-            .chat-wrapper {
-                padding: 0; 
-            }
-            #chat-container {
-                height: 100vh; 
-                max-height: 100vh;
-                margin: 0;
-                border-radius: 0; 
-            }
-            .chat-header, #input-area-wrapper {
-                border-radius: 0; 
-            }
-            .chat-header h1 {
-                font-size: 1.1rem;
-                padding: 0.8rem 1rem; 
-            }
-            #chat-messages {
-                padding: 1rem 0.75rem; 
-            }
-            .message {
-                max-width: 90%; 
-            }
-            
-            #input-area-wrapper {
-                padding: 0.75rem;
-            }
-            #user-input {
-                padding: 0.6rem 0.8rem;
-                font-size: 0.9rem;
-                min-height: 38px; /* Ajustar para móviles */
-            }
-            
-            .mode-button-container {
-                padding: 0.75rem 1rem; 
-                gap: 0.5rem;
-            }
-            .mode-button-chat {
-                width: 90%; 
-                max-width: none; 
-                font-size: 0.85rem;
-                padding: 0.7rem 1rem;
-            }
-
-            #attach-file-button, #send-button {
-                height: 38px; 
-                padding: 0.5rem;
-                font-size: 0.85rem;
-            }
-            #attach-file-button {
-                width: 38px;
-            }
-            #send-button {
-                padding-left: 1rem;
-                padding-right: 1rem;
-            }
-        }
-
-        .hidden {
-            display: none !important;
-        }
+        #user-input:focus { outline: none; border-color: var(--uclm-rojo-principal); box-shadow: 0 0 0 2px var(--borde-input-focus-sombra); }
+        #user-input:disabled { background-color: #e9ecef; cursor: not-allowed; }
+        #attach-file-button, #send-button { padding: 0.6rem; background-color: var(--uclm-rojo-principal); color: var(--texto-claro); border: none; border-radius: 6px; cursor: pointer; transition: background-color 0.2s ease; display: flex; align-items: center; justify-content: center; flex-shrink: 0; height: 40px; }
+        #attach-file-button { width: 40px; }
+        #send-button { padding-left: 1.2rem; padding-right: 1.2rem; font-weight: 500; }
+        #attach-file-button:hover:not(:disabled), #send-button:hover:not(:disabled) { background-color: var(--uclm-rojo-hover); }
+        #send-button:disabled, #attach-file-button:disabled { background-color: var(--uclm-rojo-disabled); cursor: not-allowed; opacity: 0.9; }
+        .typing-indicator { font-style: italic; color: var(--texto-gris-sutil); padding: 0.8rem 1.1rem; background-color: var(--mensaje-asistente-fondo); border-radius: 10px; align-self: flex-start; }
+        @media (max-width: 600px) { .chat-wrapper { padding: 0; } #chat-container { height: 100vh; max-height: 100vh; margin: 0; border-radius: 0; } .chat-header, #input-area-wrapper { border-radius: 0; } .chat-header h1 { font-size: 1.1rem; padding: 0.8rem 1rem; } #chat-messages { padding: 1rem 0.75rem; } .message { max-width: 90%; } #input-area-wrapper { padding: 0.75rem; } #user-input { padding: 0.6rem 0.8rem; font-size: 0.9rem; min-height: 38px; } .mode-button-container { padding: 0.75rem 1rem; gap: 0.5rem; } .mode-button-chat { width: 90%; max-width: none; font-size: 0.85rem; padding: 0.7rem 1rem; } #attach-file-button, #send-button { height: 38px; padding: 0.5rem; font-size: 0.85rem; } #attach-file-button { width: 38px; } #send-button { padding-left: 1rem; padding-right: 1rem; } }
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
@@ -399,8 +218,7 @@
             <div class="chat-header">
                 <h1>Asistente de Auditoría y Asesoría en Sostenibilidad</h1>
             </div>
-            <div id="chat-messages">
-                </div>
+            <div id="chat-messages"></div>
             <div id="input-area-wrapper">
                 <div id="file-preview-area" class="hidden">
                     <span id="file-name-preview"></span>
@@ -410,7 +228,7 @@
                 </div>
                 <div id="input-controls">
                     <input type="file" id="file-input" class="hidden">
-                    <button id="attach-file-button" title="Adjuntar archivo (Funcionalidad RAG pendiente)">
+                    <button id="attach-file-button" title="Adjuntar archivo">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.49"></path></svg>
                     </button>
                     <textarea id="user-input" rows="1" placeholder="Selecciona un modo para comenzar..."></textarea>
@@ -421,213 +239,157 @@
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function() { 
             const chatMessagesEl = document.getElementById('chat-messages');
             const userInputEl = document.getElementById('user-input');
             const sendButtonEl = document.getElementById('send-button');
-            const fileInputEl = document.getElementById('file-input');
             const attachFileButtonEl = document.getElementById('attach-file-button');
-            const filePreviewAreaEl = document.getElementById('file-preview-area');
-            const fileNamePreviewEl = document.getElementById('file-name-preview');
-            const removeFileButtonEl = document.getElementById('remove-file-button');
+            
+            // --- GESTIÓN DE LAS URLS DE LOS ENDPOINTS ---
+            const endpoints = {
+                prod: {
+                    auditor: 'https://orchestrator-520199812528.europe-west1.run.app/chat_auditor', // <-- DEBES REEMPLAZAR ESTA URL
+                    advisor: 'https://orchestrator-520199812528.europe-west1.run.app/chat_assistant' // <-- DEBES REEMPLAZAR ESTA URL
+                },
+                dev: {
+                    auditor: 'https://orchestrator-520199812528.europe-west1.run.app/chat_auditor',
+                    advisor: 'https://orchestrator-520199812528.europe-west1.run.app/chat_assistant'
+                }
+            };
+            
+            let currentEndpoints = endpoints.dev; // Por defecto, o podría decidirse dinámicamente
 
-            function adjustUserInputHeight() {
-                if (!userInputEl) return;
-                userInputEl.style.height = 'auto'; // Reset height to shrink if text is deleted
-                let scrollHeight = userInputEl.scrollHeight;
-                const maxHeight = 120; // Máximo 120px (aprox 5-6 líneas)
-                if (scrollHeight > maxHeight) {
-                    userInputEl.style.height = maxHeight + 'px';
-                    userInputEl.style.overflowY = 'auto'; // Mostrar scroll si supera el máximo
-                } else {
-                    userInputEl.style.height = scrollHeight + 'px';
-                    userInputEl.style.overflowY = 'hidden'; // Ocultar scroll si no supera
+            // Función para determinar el entorno y seleccionar las URLs correctas
+            async function configureEnvironment() {
+                try {
+                    const response = await fetch('/__firebase/init.json');
+                    const firebaseConfig = await response.json();
+                    if (firebaseConfig.projectId === 'recava-auditor') { // Tu project ID de PROD
+                        currentEndpoints = endpoints.prod;
+                        console.log("Entorno de Producción detectado.");
+                    } else { // 'recava-agent-audit-dev' o cualquier otro
+                        currentEndpoints = endpoints.dev;
+                        console.log("Entorno de Desarrollo detectado.");
+                    }
+                } catch (error) {
+                    console.warn("No se pudo detectar el entorno de Firebase, se usarán las URLs de desarrollo por defecto.", error);
+                    currentEndpoints = endpoints.dev;
                 }
             }
-
-            if (userInputEl) {
-                userInputEl.addEventListener('input', adjustUserInputHeight);
-                // Llamada inicial por si hay texto precargado (aunque no es el caso aquí)
-                adjustUserInputHeight(); 
-            }
-
-            // URLs de los endpoints (asegúrate de que sean correctas para tu entorno)
-            const AUDITOR_ENDPOINT_URL = 'https://orchestrator-520199812528.europe-west1.run.app/chat_auditor'; 
-            const ADVISOR_ENDPOINT_URL = 'https://orchestrator-520199812528.europe-west1.run.app/chat_assistant';
+            
+            // --- FIN DE LA GESTIÓN DE ENDPOINTS ---
 
             let currentChatMode = null;
             let currentChatThreadId = null;
-            let currentSelectedFile = null; 
-            let modeSelectionContainer = null; 
 
             function initializeChatInterface() {
-                console.log("Chat initializing. Awaiting mode selection.");
-                addAssistantMessageInternal("¡Hola! Somos tus auditores legales especializados en sostenibilidad empresarial y diligencia debida. Guiaremos el proceso de auditoría.<br>Elige el modo en el que quieres interactuar:", null);
-                
-                modeSelectionContainer = document.createElement('div');
-                modeSelectionContainer.className = 'mode-button-container';
-                modeSelectionContainer.innerHTML = `
-                    <button class="mode-button-chat" data-mode="auditor" title="Modo Auditor: En este modo el modelo te guiará a lo largo de un proceso de auditoría en modo pregunta-respuesta. Puedes preguntar dudas a lo largo del proceso y te las resolverá">Modo Auditor</button>
-                    <button class="mode-button-chat" data-mode="advisor" title="Modo Asesor: En este modo, el modelo resolverá tus dudas sobre Sostenibilidad. Pregunta lo que quieras o pídele que te redacte documentos relacionados con la materia.">Modo Asesor</button>
-                `;
-                if (chatMessagesEl) chatMessagesEl.appendChild(modeSelectionContainer);
+                console.log("Chat initializing...");
+                configureEnvironment().then(() => {
+                    console.log("Environment configured. Awaiting mode selection.");
+                    addAssistantMessageInternal("¡Hola! Somos tus auditores legales especializados en sostenibilidad empresarial y diligencia debida. Guiaremos el proceso de auditoría.<br>Elige el modo en el que quieres interactuar:");
+                    
+                    const modeSelectionContainer = document.createElement('div');
+                    modeSelectionContainer.className = 'mode-button-container';
+                    modeSelectionContainer.innerHTML = `
+                        <button class="mode-button-chat" data-mode="auditor" title="Modo Auditor">Modo Auditor</button>
+                        <button class="mode-button-chat" data-mode="advisor" title="Modo Asesor">Modo Asesor</button>
+                    `;
+                    if (chatMessagesEl) chatMessagesEl.appendChild(modeSelectionContainer);
 
-                modeSelectionContainer.querySelectorAll('.mode-button-chat').forEach(button => {
-                    button.addEventListener('click', handleModeSelectionClick);
+                    modeSelectionContainer.querySelectorAll('.mode-button-chat').forEach(button => {
+                        button.addEventListener('click', handleModeSelectionClick);
+                    });
+
+                    if(sendButtonEl) sendButtonEl.disabled = true;
+                    if(attachFileButtonEl) attachFileButtonEl.disabled = true;
+                    if(userInputEl) userInputEl.placeholder = "Selecciona un modo para comenzar...";
                 });
-
-                if(sendButtonEl) sendButtonEl.disabled = true;
-                if(attachFileButtonEl) {
-                    attachFileButtonEl.disabled = true; 
-                }
-                if(userInputEl) userInputEl.placeholder = "Selecciona un modo para comenzar...";
             }
 
             function handleModeSelectionClick(event) {
                 currentChatMode = event.target.dataset.mode;
+                const modeButtonContainer = event.target.parentElement;
                 console.log(`Chat mode selected: ${currentChatMode}`);
                 
-                if (modeSelectionContainer) {
-                    modeSelectionContainer.remove();
-                    modeSelectionContainer = null;
+                if (modeButtonContainer) {
+                    modeButtonContainer.remove();
                 }
                 
                 if(sendButtonEl) sendButtonEl.disabled = false;
-                if(attachFileButtonEl) {
-                    attachFileButtonEl.disabled = false; 
-                }
+                if(attachFileButtonEl) attachFileButtonEl.disabled = false;
                 if(userInputEl) {
                     userInputEl.value = '';
                     userInputEl.focus();
-                    adjustUserInputHeight(); // Ajustar altura después de limpiar
+                    adjustUserInputHeight();
                 }
-                currentChatThreadId = null; 
-                clearSelectedFileUI();
+                currentChatThreadId = null;
                 console.log("Thread ID has been reset for the new mode.");
 
                 if (currentChatMode === 'auditor') {
-                    addAssistantMessageInternal("Has seleccionado el modo <strong>AUDITOR</strong>.<br>Voy a hacerte una batería de preguntas para comprobar el nivel de adecuación al estándar y al finalizar generaré un informe.<br>Comienza por contarme: nombre de la empresa, sector, tamaño y sedes de la empresa.", null);
+                    addAssistantMessageInternal("Has seleccionado el modo <strong>AUDITOR</strong>.<br>Comienza por contarme: nombre de la empresa, sector, tamaño y sedes de la empresa.");
                     if(userInputEl) userInputEl.placeholder = "Nombre, sector, tamaño, sedes...";
                 } else if (currentChatMode === 'advisor') {
-                    addAssistantMessageInternal("Has seleccionado el modo <strong>ASESOR</strong>.<br>Puedes hacerme preguntas o pedirme consejo sobre temas de sostenibilidad y diligencia debida. ¿En qué puedo ayudarte hoy?", null);
+                    addAssistantMessageInternal("Has seleccionado el modo <strong>ASESOR</strong>.<br>¿En qué puedo ayudarte hoy?");
                     if(userInputEl) userInputEl.placeholder = "Escribe tu consulta de asesoría...";
                 }
             }
             
-            if (attachFileButtonEl) {
-                attachFileButtonEl.addEventListener('click', () => {
-                    addSystemMessageToChat("La funcionalidad de adjuntar archivos para 'File Search' se gestiona automáticamente por el asistente. Si necesitas que analice un archivo específico, menciónalo en tu consulta después de haberlo subido a la plataforma del asistente (fuera de este chat) o si el asistente te lo solicita.");
-                });
-            }
-            
-            function clearSelectedFileUI() {
-                currentSelectedFile = null;
-                if(fileNamePreviewEl) fileNamePreviewEl.textContent = '';
-                if(filePreviewAreaEl) filePreviewAreaEl.classList.add('hidden');
-                if(fileInputEl) fileInputEl.value = null; 
-                console.log("Selección de archivo local limpiada.");
-            }
-
             async function handleSendMessageToServer() {
                 const messageText = userInputEl.value.trim();
-                if (!messageText) { 
-                    addSystemMessageToChat("Por favor, escribe un mensaje.");
-                    return;
-                }
-                if (!currentChatMode) {
-                    addSystemMessageToChat("Por favor, selecciona un modo primero.");
-                    return; 
-                }
+                if (!messageText || !currentChatMode) return;
 
                 addUserMessageToChat(messageText);
                 userInputEl.value = '';
-                adjustUserInputHeight(); // Ajustar altura después de enviar
+                adjustUserInputHeight();
                 showTypingIndicatorToChat();
 
-                const endpointUrl = currentChatMode === 'auditor' ? AUDITOR_ENDPOINT_URL : ADVISOR_ENDPOINT_URL;
-                const payloadToBackend = {
-                    message: messageText,
-                    thread_id: currentChatThreadId,
-                };
+                const endpointUrl = currentChatMode === 'auditor' ? currentEndpoints.auditor : currentEndpoints.advisor;
                 
-                console.log("Payload a enviar al backend:", JSON.stringify(payloadToBackend));
-
                 try {
                     const response = await fetch(endpointUrl, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', },
-                        body: JSON.stringify(payloadToBackend)
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: messageText, thread_id: currentChatThreadId })
                     });
                     removeTypingIndicatorFromChat();
 
                     if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({ error: "Error desconocido en la respuesta", details: `Status ${response.status}`}));
+                        const errorData = await response.json().catch(() => ({ error: "Error de red o respuesta no válida", details: `Status ${response.status}`}));
                         addSystemMessageToChat(`Error API: ${errorData.error || response.statusText}. ${errorData.details || ''}`);
-                        console.error("Error API desde el backend:", errorData);
-                        if (response.status === 400 && errorData.error && typeof errorData.error === 'string' && errorData.error.toLowerCase().includes("thread_id")) {
-                            addSystemMessageToChat("Hubo un problema con la sesión actual. Intentando iniciar una nueva sesión...");
-                            currentChatThreadId = null; 
-                        }
                         return;
                     }
 
                     const dataFromBackend = await response.json();
-                    console.log("Respuesta del backend:", dataFromBackend);
                     
                     if (dataFromBackend.thread_id) {
                         currentChatThreadId = dataFromBackend.thread_id;
-                        console.log("Thread ID actualizado:", currentChatThreadId);
                     }
 
                     if (dataFromBackend.response) {
-                        // MODIFICACIÓN: Limpiar los marcadores 【...†source】 del texto de la respuesta
+                        // Limpiamos los marcadores de cita que a veces añade el LLM directamente en el texto
                         const cleanedResponseText = dataFromBackend.response.replace(/【.*?†source】/g, '').trim();
+                        // Pasamos el texto limpio y la lista de citas (anotaciones) a la función de renderizado
                         addAssistantMessageWithCitations(cleanedResponseText, dataFromBackend.citations || []);
                     } else if (dataFromBackend.error) {
                         addSystemMessageToChat(`Error del asistente: ${dataFromBackend.error} ${dataFromBackend.details || ''}`);
-                    } else {
-                        addSystemMessageToChat("No se recibió una respuesta clara del asistente.");
                     }
                 } catch (error) {
                     removeTypingIndicatorFromChat();
-                    addSystemMessageToChat("Error de conexión con el servidor. Por favor, inténtalo de nuevo más tarde.");
+                    addSystemMessageToChat("Error de conexión con el servidor.");
                     console.error("Error en fetch:", error);
                 }
             }
             
-            function addMessageToChatDOM(htmlContent, cssClass) {
-                const messageElement = document.createElement('div');
-                messageElement.classList.add('message', cssClass);
-                messageElement.innerHTML = htmlContent; 
-                
-                if(chatMessagesEl) {
-                    chatMessagesEl.appendChild(messageElement);
-                    chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
-                }
-            }
-            
-            function addUserMessageToChat(text) {
-                const escapedText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-                addMessageToChatDOM(escapedText, 'user-message');
-            }
-
-            function addSystemMessageToChat(text) {
-                const escapedText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-                addMessageToChatDOM(escapedText, 'system-message');
-            }
-            
-            function addAssistantMessageWithCitations(responseText, citationsList) { // Renombrado para claridad
+            function addAssistantMessageWithCitations(responseText, citationsList) {
                 const messageWrapper = document.createElement('div');
                 messageWrapper.classList.add('message', 'assistant-message');
 
                 const mainTextDiv = document.createElement('div');
                 mainTextDiv.classList.add('main-assistant-text');
-                // `responseText` ya viene limpio de 【...†source】
-                mainTextDiv.innerHTML = marked.parse(responseText || "El asistente no proporcionó una respuesta textual."); 
+                mainTextDiv.innerHTML = marked.parse(responseText || "El asistente no proporcionó una respuesta textual.");
                 messageWrapper.appendChild(mainTextDiv);
                 
-                // La lógica para mostrar citationsList se mantiene, pero no se usará
-                // si el backend no envía la clave 'citations' o la envía vacía.
+                // Si la lista de citas (anotaciones) no está vacía, las renderiza aquí debajo de la respuesta.
                 if (citationsList && citationsList.length > 0) {
                     const citationsContainerDiv = document.createElement('div');
                     citationsContainerDiv.classList.add('citations-container');
@@ -636,8 +398,8 @@
                         const citationDiv = document.createElement('div');
                         citationDiv.classList.add('citation-item');
                         
-                        let citationHTML = `<span class="citation-marker">${citation.marker || '[?]'}</span>`;
-                        citationHTML += `<span class="citation-quote">${escapeHtml(citation.quote_from_file || 'Contenido de la cita no disponible.')}</span>`;
+                        let citationHTML = `<span class="citation-marker">${escapeHtml(citation.marker || '[?]')}</span>`;
+                        citationHTML += `<span class="citation-quote">${escapeHtml(citation.quote_from_file || 'Contenido no disponible.')}</span>`;
                         if (citation.file_id) {
                              citationHTML += `<span class="citation-file-id">ID Archivo: ${escapeHtml(citation.file_id)}</span>`;
                         }
@@ -653,61 +415,20 @@
                 }
             }
 
-             function addAssistantMessageInternal(htmlContent, _unusedCitations) {
-                const messageWrapper = document.createElement('div');
-                messageWrapper.classList.add('message', 'assistant-message');
-                const mainTextDiv = document.createElement('div');
-                mainTextDiv.classList.add('main-assistant-text');
-                mainTextDiv.innerHTML = htmlContent; 
-                messageWrapper.appendChild(mainTextDiv);
-                
-                if(chatMessagesEl) chatMessagesEl.appendChild(messageWrapper);
-                if(chatMessagesEl) chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
-            }
-
-            function escapeHtml(unsafe) {
-                if (unsafe === null || typeof unsafe === 'undefined') return '';
-                return unsafe
-                    .toString()
-                    .replace(/&/g, "&amp;")
-                    .replace(/</g, "&lt;")
-                    .replace(/>/g, "&gt;")
-                    .replace(/"/g, "&quot;")
-                    .replace(/'/g, "&#039;");
-            }
-
+            // --- Funciones auxiliares (sin cambios) ---
+            function adjustUserInputHeight() { if (!userInputEl) return; userInputEl.style.height = 'auto'; let scrollHeight = userInputEl.scrollHeight; const maxHeight = 120; if (scrollHeight > maxHeight) { userInputEl.style.height = maxHeight + 'px'; userInputEl.style.overflowY = 'auto'; } else { userInputEl.style.height = scrollHeight + 'px'; userInputEl.style.overflowY = 'hidden'; } }
+            if (userInputEl) { userInputEl.addEventListener('input', adjustUserInputHeight); adjustUserInputHeight(); }
+            if (attachFileButtonEl) { attachFileButtonEl.addEventListener('click', () => addSystemMessageToChat("La funcionalidad de adjuntar archivos se gestiona automáticamente por el asistente."));}
+            function addMessageToChatDOM(htmlContent, cssClass) { const el = document.createElement('div'); el.classList.add('message', cssClass); el.innerHTML = htmlContent; if(chatMessagesEl) { chatMessagesEl.appendChild(el); chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight; } }
+            function addUserMessageToChat(text) { const escapedText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); addMessageToChatDOM(escapedText, 'user-message'); }
+            function addSystemMessageToChat(text) { const escapedText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); addMessageToChatDOM(escapedText, 'system-message'); }
+            function addAssistantMessageInternal(htmlContent) { const el = document.createElement('div'); el.classList.add('message', 'assistant-message'); el.innerHTML = `<div class="main-assistant-text">${htmlContent}</div>`; if(chatMessagesEl) { chatMessagesEl.appendChild(el); chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight; } }
+            function escapeHtml(unsafe) { if (!unsafe) return ''; return unsafe.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
             let typingIndicatorDiv = null;
-            function showTypingIndicatorToChat() {
-                if (typingIndicatorDiv) return; 
-                typingIndicatorDiv = document.createElement('div');
-                typingIndicatorDiv.classList.add('message', 'assistant-message', 'typing-indicator'); 
-                typingIndicatorDiv.textContent = "Generando una respuesta, espere unos segundos...";
-                if(chatMessagesEl) {
-                    chatMessagesEl.appendChild(typingIndicatorDiv);
-                    chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
-                }
-            }
-
-            function removeTypingIndicatorFromChat() {
-                if (typingIndicatorDiv) {
-                    typingIndicatorDiv.remove();
-                    typingIndicatorDiv = null;
-                }
-            }
-
-            if (sendButtonEl) {
-                sendButtonEl.addEventListener('click', handleSendMessageToServer);
-            }
-            if (userInputEl) {
-                userInputEl.addEventListener('keypress', function(event) {
-                    if (event.key === 'Enter' && !event.shiftKey && sendButtonEl && !sendButtonEl.disabled) { // Enviar con Enter (sin Shift)
-                        event.preventDefault(); // Prevenir nueva línea en textarea
-                        handleSendMessageToServer();
-                    }
-                });
-                // Ajustar altura al cargar la página si hay contenido (poco probable aquí)
-                adjustUserInputHeight();
-            }
+            function showTypingIndicatorToChat() { if (typingIndicatorDiv) return; typingIndicatorDiv = document.createElement('div'); typingIndicatorDiv.classList.add('message', 'assistant-message', 'typing-indicator'); typingIndicatorDiv.textContent = "Generando una respuesta..."; if(chatMessagesEl) { chatMessagesEl.appendChild(typingIndicatorDiv); chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight; } }
+            function removeTypingIndicatorFromChat() { if (typingIndicatorDiv) { typingIndicatorDiv.remove(); typingIndicatorDiv = null; } }
+            if (sendButtonEl) { sendButtonEl.addEventListener('click', handleSendMessageToServer); }
+            if (userInputEl) { userInputEl.addEventListener('keypress', function(event) { if (event.key === 'Enter' && !event.shiftKey && sendButtonEl && !sendButtonEl.disabled) { event.preventDefault(); handleSendMessageToServer(); } }); }
             
             initializeChatInterface();
         });
