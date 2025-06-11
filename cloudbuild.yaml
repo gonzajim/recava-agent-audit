@@ -1,15 +1,22 @@
 # =====================================================================================
-# cloudbuild.yaml con Diagnóstico Avanzado
+# cloudbuild.yaml Parametrizado para Entornos PROD y DEV - Versión Final
 # =====================================================================================
+# Este archivo es una receta ÚNICA. Los triggers de Cloud Build le pasarán
+# las variables _SERVICE_NAME y _FIREBASE_PROJECT_ALIAS para dirigir el despliegue
+# al entorno correcto (Producción o Desarrollo).
+# =====================================================================================
+
 steps:
+  # -------------------------------------------------------------------------------------
+  # PASO 1: Desplegar el Backend en Cloud Run
+  # -------------------------------------------------------------------------------------
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'Deploy-Backend-to-Cloud-Run'
     entrypoint: 'gcloud'
     args:
-      - '--verbosity=debug'  # <-- AÑADIDO: Muestra los logs de depuración
       - 'run'
       - 'deploy'
-      - '${_SERVICE_NAME}'
+      - '${_SERVICE_NAME}'  # <-- VARIABLE: 'orchestrator' para PROD, 'orchestrator-dev' para DEV
       - '--source'
       - '.'
       - '--region'
@@ -20,14 +27,18 @@ steps:
       - '--port'
       - '8080'
       - '--project'
-      - '${PROJECT_ID}'
+      - '${PROJECT_ID}' # Esta variable es proporcionada automáticamente por Cloud Build
+      # --- LÍNEA DE SECRETOS REINTRODUCIDA ---
+      # Vincula los secretos de Secret Manager como variables de entorno en Cloud Run.
+      - '--update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest,ORCHESTRATOR_ASSISTANT_ID=ORCHESTRATOR_ASSISTANT_ID:latest,ASISTENTE_ID=ASISTENTE_ID:latest,AUDITOR_ID=AUDITOR_ID:latest'
       - '--timeout=300s'
       - '--concurrency=80'
       - '--cpu=1'
       - '--memory=512Mi'
 
-  # ... (resto del archivo sin cambios) ...
-
+  # -------------------------------------------------------------------------------------
+  # PASO 2: Desplegar el Frontend en Firebase Hosting
+  # -------------------------------------------------------------------------------------
   - name: 'node:18'
     id: 'Install-Firebase-Tools'
     entrypoint: 'npm'
@@ -39,12 +50,15 @@ steps:
     args:
       - 'deploy'
       - '--project'
-      - '${_FIREBASE_PROJECT_ALIAS}'
+      - '${_FIREBASE_PROJECT_ALIAS}' # <-- VARIABLE: 'prod' o 'dev'
       - '--only'
       - 'hosting'
-      - '--force'
-    waitFor: ['Install-Firebase-Tools']
+      - '--force' # Necesario para entornos de CI/CD no interactivos
+    waitFor: ['Install-Firebase-Tools'] # Espera a que se instalen las herramientas
 
+# =====================================================================================
+# Definición de las variables con valores POR DEFECTO para el entorno de producción.
+# =====================================================================================
 substitutions:
   _SERVICE_NAME: 'orchestrator'
   _FIREBASE_PROJECT_ALIAS: 'prod'
