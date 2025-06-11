@@ -1,29 +1,15 @@
 # =====================================================================================
-# cloudbuild.yaml Parametrizado para Entornos PROD y DEV
+# cloudbuild.yaml con Diagnóstico Avanzado
 # =====================================================================================
-# Este archivo es una receta ÚNICA. Los triggers de Cloud Build le pasarán
-# las variables _SERVICE_NAME y _FIREBASE_PROJECT_ALIAS para dirigir el despliegue
-# al entorno correcto (Producción o Desarrollo).
-# =====================================================================================
-
 steps:
-  # -------------------------------------------------------------------------------------
-  # PASO 1: Desplegar el Backend en Cloud Run
-  # -------------------------------------------------------------------------------------
-  # Este único paso reemplaza los tres pasos anteriores (build, push, deploy).
-  # El comando 'gcloud run deploy --source' se encarga de:
-  #   1. Construir la imagen Docker usando el Dockerfile en el directorio raíz.
-  #   2. Subir la imagen a Artifact Registry.
-  #   3. Desplegar la nueva imagen en el servicio de Cloud Run especificado.
-  # Utiliza la variable ${_SERVICE_NAME} que será proporcionada por el trigger.
-  # -------------------------------------------------------------------------------------
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk' 
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'Deploy-Backend-to-Cloud-Run'
     entrypoint: 'gcloud'
     args:
+      - '--verbosity=debug'  # <-- AÑADIDO: Muestra los logs de depuración
       - 'run'
       - 'deploy'
-      - '${_SERVICE_NAME}'  # <-- VARIABLE: 'orchestrator' para PROD, 'orchestrator-dev' para DEV
+      - '${_SERVICE_NAME}'
       - '--source'
       - '.'
       - '--region'
@@ -34,19 +20,14 @@ steps:
       - '--port'
       - '8080'
       - '--project'
-      - '${PROJECT_ID}' # Esta variable es proporcionada automáticamente por Cloud Build
+      - '${PROJECT_ID}'
       - '--timeout=300s'
       - '--concurrency=80'
       - '--cpu=1'
       - '--memory=512Mi'
 
-  # -------------------------------------------------------------------------------------
-  # PASO 2: Desplegar el Frontend en Firebase Hosting
-  # -------------------------------------------------------------------------------------
-  # Estos dos sub-pasos se encargan de desplegar tu frontend.
-  # Utiliza la variable ${_FIREBASE_PROJECT_ALIAS} que definimos en el archivo
-  # .firebaserc ('prod' o 'dev') y que será proporcionada por el trigger.
-  # -------------------------------------------------------------------------------------
+  # ... (resto del archivo sin cambios) ...
+
   - name: 'node:18'
     id: 'Install-Firebase-Tools'
     entrypoint: 'npm'
@@ -58,17 +39,12 @@ steps:
     args:
       - 'deploy'
       - '--project'
-      - '${_FIREBASE_PROJECT_ALIAS}' # <-- VARIABLE: 'prod' o 'dev'
+      - '${_FIREBASE_PROJECT_ALIAS}'
       - '--only'
       - 'hosting'
-      - '--force' # Necesario para entornos de CI/CD no interactivos
-    waitFor: ['Install-Firebase-Tools'] # Espera a que se instalen las herramientas
+      - '--force'
+    waitFor: ['Install-Firebase-Tools']
 
-# =====================================================================================
-# Definición de las variables con valores POR DEFECTO.
-# Estos valores se usarán si un trigger no los sobrescribe.
-# Normalmente, se establecen los valores de producción como defecto.
-# =====================================================================================
 substitutions:
   _SERVICE_NAME: 'orchestrator'
   _FIREBASE_PROJECT_ALIAS: 'prod'
