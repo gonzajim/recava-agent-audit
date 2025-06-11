@@ -35,7 +35,6 @@ steps:
       - '8080'
       - '--project'
       - '${PROJECT_ID}' # Esta variable es proporcionada automáticamente por Cloud Build
-      - #'--update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest,ORCHESTRATOR_ASSISTANT_ID=ORCHESTRATOR_ASSISTANT_ID:latest,ASISTENTE_ID=ASISTENTE_ID:latest,AUDITOR_ID=AUDITOR_ID:latest'
       - '--timeout=300s'
       - '--concurrency=80'
       - '--cpu=1'
