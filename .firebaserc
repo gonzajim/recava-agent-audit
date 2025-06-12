@@ -1,28 +1,6 @@
 {
-  "projects": {},
-  "targets": {
-    "recava-auditor": {
-      "hosting": {
-        "prod": [
-          "recava-agent-audit"
-        ]
-      }
-    },
-    "recava-audit": {
-      "hosting": {
-        "dev": [
-          "recava-agent-audit-dev"
-        ]
-      }
-    }
-  },
-  "etags": {},
-  "hosting": {
-    "public": ".",
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
-    ]
+  "projects": {
+    "prod": "recava-auditor",
+    "dev": "recava-agent-audit-dev"
   }
 }
