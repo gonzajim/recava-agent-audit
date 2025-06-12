@@ -1,6 +1,6 @@
 {
   "projects": {
     "prod": "recava-auditor",
-    "dev": "recava-agent-audit-dev"
+    "dev": "recava-auditor-dev"
   }
 }
