@@ -12,13 +12,9 @@ from google.cloud import firestore
 app = Flask(__name__)
 
 # --- CONFIGURACIÓN DE CORS ---
-# Añadimos las URL del nuevo frontend de desarrollo a la lista de orígenes permitidos.
-allowed_origins = [
-    "https://recava-auditor.web.app",       # URL de Firebase PROD
-    "https://recava-auditor-dev.web.app"   # URL de Firebase DEV (CORREGIDA)
-]
-
-CORS(app, resources={r"/*": {"origins": allowed_origins}}, supports_credentials=True, methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], allow_headers=["Content-Type", "Authorization", "X-Requested-With"])
+# Se actualiza para permitir cualquier origen (*), lo que soluciona los problemas
+# de conexión entre el frontend y el backend durante el desarrollo.
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True, methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], allow_headers=["Content-Type", "Authorization", "X-Requested-With"])
 
 
 # --- Centralized Logging Setup ---
