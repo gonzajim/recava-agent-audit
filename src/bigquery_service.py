@@ -1,6 +1,6 @@
 # src/bigquery_service.py
 import datetime
-from config import bq_client, logger, BIGQUERY_DATASET_ID, BIGQUERY_TABLE_ID
+from src.config import bq_client, logger, BIGQUERY_DATASET_ID, BIGQUERY_TABLE_ID
 
 def insert_chat_turn_to_bigquery(thread_id: str, user_message: str, assistant_response: str, endpoint_source: str):
     """Inserta una fila en la tabla de historial de chat de BigQuery."""

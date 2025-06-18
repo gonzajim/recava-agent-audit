@@ -1,6 +1,6 @@
 # src/openai_service.py
 import json
-from config import client, logger, ASISTENTE_ID
+from src.config import client, logger, ASISTENTE_ID
 
 def execute_invoke_sustainability_expert(query: str, original_thread_id: str) -> str:
     """Ejecuta una consulta al Asistente de Sostenibilidad como una herramienta."""

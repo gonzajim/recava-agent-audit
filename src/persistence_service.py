@@ -1,6 +1,6 @@
 # src/persistence_service.py
 from google.cloud import firestore
-from config import db, logger
+from src.config import db, logger
 # <-- CAMBIO: Importamos el nuevo servicio de BigQuery
 from src.bigquery_service import insert_chat_turn_to_bigquery
 
