@@ -5,7 +5,7 @@ import json
 from flask import request, jsonify
 
 # --- 1. Importaciones de la configuración y servicios ---
-from config import app, logger, client, ORCHESTRATOR_ASSISTANT_ID, ASISTENTE_ID
+from src.config import app, logger, client, ORCHESTRATOR_ASSISTANT_ID, ASISTENTE_ID
 from src.persistence_service import store_conversation_turn
 from src.openai_service import execute_invoke_sustainability_expert, process_assistant_message_without_citations
 
