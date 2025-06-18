@@ -1,3 +1,5 @@
+# Dockerfile
+
 # ---- Builder Stage ----
 FROM python:3.10-slim as builder
 
@@ -46,12 +48,13 @@ COPY --from=builder --chown=appuser:appgroup /opt/venv /opt/venv
 WORKDIR /app
 
 # ========================================================================
-# --- MODIFICACIÓN CLAVE ---
-# Copiar todos los archivos de la aplicación necesarios
+# --- CORRECCIÓN ---
+# Copiamos app.py desde la raíz.
+# Copiamos todo el directorio 'src' a la imagen.
+# Esto soluciona el error ya que config.py está dentro de src.
 # ========================================================================
-COPY --chown=appuser:appgroup app.py config.py ./
+COPY --chown=appuser:appgroup app.py ./
 COPY --chown=appuser:appgroup src/ ./src/
-# ========================================================================
 
 USER appuser
 
