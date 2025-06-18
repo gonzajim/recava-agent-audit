@@ -6,7 +6,8 @@ from flask import request, jsonify
 
 # --- 1. Importaciones de la configuración y servicios ---
 from src.config import app, logger, client, ORCHESTRATOR_ASSISTANT_ID, ASISTENTE_ID
-from src.persistence_service import store_conversation_turn
+# --- CORRECCIÓN: Usar el nuevo nombre de la función ---
+from src.persistence_service import persist_conversation_turn
 from src.openai_service import execute_invoke_sustainability_expert, process_assistant_message_without_citations
 
 # --- 2. Endpoints de la API ---
@@ -19,16 +20,12 @@ def chat_with_main_audit_orchestrator():
 
     try:
         if not user_message: return jsonify({"error": "Invalid request: message is required."}), 400
-
-        if not thread_id:
-            thread_id = client.beta.threads.create().id
-            logger.info(f"{endpoint_name}: Created new thread: {thread_id}")
-
+        if not thread_id: thread_id = client.beta.threads.create().id
+        
         client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message)
         run = client.beta.threads.runs.create(thread_id=thread_id, assistant_id=ORCHESTRATOR_ASSISTANT_ID)
         run_id = run.id
 
-        # Bucle de sondeo para manejar el estado del Run
         while run.status in ['queued', 'in_progress', 'requires_action']:
             time.sleep(1)
             run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
@@ -42,21 +39,22 @@ def chat_with_main_audit_orchestrator():
                 ]
                 if tool_outputs:
                     client.beta.threads.runs.submit_tool_outputs(thread_id=thread_id, run_id=run.id, tool_outputs=tool_outputs)
-
+        
         run_status = run.status
         if run_status == 'completed':
             messages = client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id, order='desc')
             response_text = process_assistant_message_without_citations(messages.data, run.id, endpoint_name)
-            store_conversation_turn(thread_id, user_message, response_text, endpoint_name, run_id=run.id, assistant_name="MainAuditOrchestrator")
+            # --- CORRECCIÓN: Llamar a la función con el nombre correcto ---
+            persist_conversation_turn(thread_id, user_message, response_text, endpoint_name, run_id=run.id, assistant_name="MainAuditOrchestrator")
             return jsonify({"response": response_text, "thread_id": thread_id, "run_id": run.id, "run_status": run_status}), 200
         else:
             raise Exception(f"Run ended with unhandled status: {run_status}. Details: {run.last_error}")
 
     except Exception as e:
         logger.error(f"{endpoint_name}: An error occurred: {e}", exc_info=True)
-        store_conversation_turn(thread_id, user_message, f"API Error: {e}", endpoint_name, run_id=run_id, assistant_name="Exception")
+        # --- CORRECCIÓN: Llamar a la función con el nombre correcto ---
+        persist_conversation_turn(thread_id, user_message, f"API Error: {e}", endpoint_name, run_id=run_id, assistant_name="Exception")
         return jsonify({"error": "Internal server error", "details": str(e), "run_status": run_status}), 500
-
 
 @app.route('/chat_assistant', methods=['POST'])
 def chat_with_sustainability_expert():
@@ -66,10 +64,7 @@ def chat_with_sustainability_expert():
 
     try:
         if not user_message: return jsonify({"error": "Invalid request: message is required."}), 400
-
-        if not thread_id:
-            thread_id = client.beta.threads.create().id
-            logger.info(f"{endpoint_name}: Created new thread: {thread_id}")
+        if not thread_id: thread_id = client.beta.threads.create().id
 
         client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message)
         run = client.beta.threads.runs.create_and_poll(thread_id=thread_id, assistant_id=ASISTENTE_ID, timeout=180.0)
@@ -78,26 +73,25 @@ def chat_with_sustainability_expert():
         if run_status == 'completed':
             messages = client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id, order='desc')
             response_text = process_assistant_message_without_citations(messages.data, run.id, endpoint_name)
-            store_conversation_turn(thread_id, user_message, response_text, endpoint_name, run_id=run.id, assistant_name="SustainabilityExpert")
+            # --- CORRECCIÓN: Llamar a la función con el nombre correcto ---
+            persist_conversation_turn(thread_id, user_message, response_text, endpoint_name, run_id=run.id, assistant_name="SustainabilityExpert")
             return jsonify({"response": response_text, "thread_id": thread_id, "run_id": run.id, "run_status": run_status}), 200
         else:
             raise Exception(f"Run ended with unhandled status: {run_status}. Details: {run.last_error}")
 
     except Exception as e:
         logger.error(f"{endpoint_name}: An error occurred: {e}", exc_info=True)
-        store_conversation_turn(thread_id, user_message, f"API Error: {e}", endpoint_name, run_id=run_id, assistant_name="Exception")
+        # --- CORRECCIÓN: Llamar a la función con el nombre correcto ---
+        persist_conversation_turn(thread_id, user_message, f"API Error: {e}", endpoint_name, run_id=run_id, assistant_name="Exception")
         return jsonify({"error": "Internal server error", "details": str(e), "run_status": run_status}), 500
-
 
 @app.route('/health', methods=['GET'])
 def health_check():
     """Endpoint para comprobaciones de estado del servicio."""
     return jsonify({"status": "healthy"}), 200
 
-
 # --- 3. Punto de Entrada de la Aplicación ---
 if __name__ == '__main__':
-    # El objeto 'app' se importa desde config.py
     app.run(
         host='0.0.0.0',
         port=int(os.environ.get("PORT", 8080)),
