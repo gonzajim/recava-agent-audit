@@ -1,0 +1,10 @@
+{
+  "name": "stripe-webhook",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.0.0",
+    "firebase-admin": "^11.0.0",
+    "stripe": "^10.0.0" 
+  }
+}

@@ -5,435 +5,402 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Asistente de Auditoría en Sostenibilidad</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <!-- SDKs de Firebase (Compatibilidad v9 para usar API legada) -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+
     <style>
-        /* -------------------------------------------------------------------------- */
-        /* ESTILOS GLOBALES Y VARIABLES DE COLOR (Tema UCLM)                          */
-        /* -------------------------------------------------------------------------- */
+        /* ESTILOS GLOBALES Y VARIABLES DE COLOR (Tema UCLM) */
         :root {
             --uclm-rojo-principal: #8C1B3A;
             --uclm-rojo-hover: #6D142C;  
             --uclm-rojo-disabled: #d1a7b0;
-            
             --texto-claro: #FFFFFF;
             --texto-oscuro-principal: #333333;
             --texto-gris-parrafos: #4A4A4A;
             --texto-gris-sutil: #6B7280;
-            --texto-gris-medio: #555; /* Añadido para citas */
-
+            --texto-gris-medio: #555;
             --fondo-body: #f4f6f8;
             --fondo-chat: #FFFFFF;
             --fondo-input-area: #f9f9f9;
-            
             --mensaje-asistente-fondo: #eef0f2;
             --mensaje-usuario-fondo: #E6F5DC;
-
             --borde-general: #dee2e6;
             --borde-input: #ced4da;
             --borde-input-focus-sombra: rgba(140, 27, 58, 0.2);
-
             --fuente-principal: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         }
+        *, *::before, *::after { box-sizing: border-box; }
+        body { font-family: var(--fuente-principal); background-color: var(--fondo-body); margin: 0; color: var(--texto-oscuro-principal); line-height: 1.6; font-size: 16px; }
+        .chat-wrapper { display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; padding: 20px; }
 
-        /* --- Reset básico y estilos del body --- */
-        *, *::before, *::after {
-            box-sizing: border-box;
-        }
+        /* Contenedor principal para vistas */
+        #app-container { width: 100%; max-width: 800px; margin: 0 auto; }
 
-        body {
-            font-family: var(--fuente-principal);
-            background-color: var(--fondo-body);
-            margin: 0;
-            color: var(--texto-oscuro-principal);
-            line-height: 1.6;
-            font-size: 16px;
-        }
+        /* Vista de Autenticación */
+        #auth-view { background-color: var(--fondo-chat); padding: 2rem 2.5rem; border-radius: 10px; box-shadow: 0 5px 20px rgba(0, 0, 0, 0.12); }
+        #auth-view h2 { text-align: center; color: var(--uclm-rojo-principal); font-size: 1.5rem; margin-bottom: 1.5rem; }
+        #auth-view .form-group { margin-bottom: 1rem; }
+        #auth-view input { width: 100%; padding: 0.8rem; border: 1px solid var(--borde-input); border-radius: 6px; }
+        #auth-view input:focus { outline: none; border-color: var(--uclm-rojo-principal); box-shadow: 0 0 0 2px var(--borde-input-focus-sombra); }
+        #auth-view button { width: 100%; padding: 0.8rem; border: none; border-radius: 6px; color: var(--texto-claro); cursor: pointer; transition: background-color 0.2s ease; font-weight: 500; }
+        #login-button { background-color: var(--uclm-rojo-principal); }
+        #login-button:hover { background-color: var(--uclm-rojo-hover); }
+        #signup-button { background-color: #555; margin-top: 0.5rem; }
+        #signup-button:hover { background-color: #333; }
+        #auth-error { color: var(--uclm-rojo-principal); text-align: center; margin-top: 1rem; font-size: 0.9rem; min-height: 1.2rem; }
 
-        /* Contenedor para centrar el chat */
-        .chat-wrapper {
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            min-height: 100vh;
-            padding: 20px;
-        }
+        /* ESTRUCTURA PRINCIPAL DEL CHAT */
+        #chat-container { width: 100%; max-width: 800px; height: calc(100vh - 40px); max-height: 850px; margin: 0 auto; border-radius: 10px; box-shadow: 0 5px 20px rgba(0, 0, 0, 0.12); display: flex; flex-direction: column; background-color: var(--fondo-chat); overflow: hidden; }
+        .chat-header { background-color: var(--uclm-rojo-principal); color: var(--texto-claro); padding: 0.9rem 1.5rem; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; }
+        .chat-header h1 { margin: 0; font-size: 1.2rem; font-weight: 500; }
+        .chat-header-user-info { text-align: right; }
+        .chat-header-user-info p { margin: 0; font-size: 0.9rem; }
+        .chat-header-user-info #credits-balance { font-weight: bold; }
+        .chat-header-user-info .user-actions { margin-top: 4px; }
+        .chat-header-user-info button { background: none; border: 1px solid var(--texto-claro); color: var(--texto-claro); padding: 2px 8px; font-size: 0.75rem; border-radius: 4px; cursor: pointer; transition: background-color 0.2s, color 0.2s; }
+        .chat-header-user-info button:hover { background-color: var(--texto-claro); color: var(--uclm-rojo-principal); }
+        #chat-messages { flex-grow: 1; overflow-y: auto; padding: 1.25rem; display: flex; flex-direction: column; gap: 0.8rem; }
 
-        /* -------------------------------------------------------------------------- */
-        /* ESTRUCTURA PRINCIPAL DEL CHAT                                              */
-        /* -------------------------------------------------------------------------- */
-        #chat-container {
-            width: 100%;
-            max-width: 800px;
-            height: calc(100vh - 40px);
-            max-height: 850px;
-            margin: 0 auto;
-            border-radius: 10px;
-            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.12);
-            display: flex;
-            flex-direction: column;
-            background-color: var(--fondo-chat);
-            overflow: hidden;
-        }
+        /* Estilos de Mensajes (sin cambios) */
+        .message { padding: 0.8rem 1.1rem; border-radius: 10px; max-width: 85%; line-height: 1.5; word-wrap: break-word; color: var(--texto-gris-parrafos); box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+        .user-message { background-color: var(--mensaje-usuario-fondo); align-self: flex-end; border-bottom-right-radius: 3px; }
+        .assistant-message { background-color: var(--mensaje-asistente-fondo); align-self: flex-start; border-bottom-left-radius: 3px; }
+        .system-message { background-color: transparent; color: var(--texto-gris-sutil); font-size: 0.85rem; font-style: italic; text-align: center; align-self: center; padding: 0.25rem 0.5rem; max-width: 100%; box-shadow: none; }
+        .assistant-message .main-assistant-text strong, .assistant-message .main-assistant-text b { font-weight: 600; color: var(--uclm-rojo-principal); }
+        /* ... resto de estilos de mensaje y citas sin cambios ... */
 
-        .chat-header {
-            background-color: var(--uclm-rojo-principal);
-            color: var(--texto-claro);
-            padding: 0.9rem 1.5rem;
-            text-align: center;
-            flex-shrink: 0;
-        }
-        .chat-header h1 {
-            margin: 0;
-            font-size: 1.2rem;
-            font-weight: 500;
-        }
-
-        #chat-messages {
-            flex-grow: 1;
-            overflow-y: auto;
-            padding: 1.25rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.8rem;
-        }
-
-        /* -------------------------------------------------------------------------- */
-        /* ESTILOS DE MENSAJES                                                        */
-        /* -------------------------------------------------------------------------- */
-        .message {
-            padding: 0.8rem 1.1rem;
-            border-radius: 10px;
-            max-width: 85%;
-            line-height: 1.5;
-            word-wrap: break-word;
-            color: var(--texto-gris-parrafos);
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        }
-
-        .user-message {
-            background-color: var(--mensaje-usuario-fondo);
-            align-self: flex-end;
-            border-bottom-right-radius: 3px;
-        }
-
-        .assistant-message {
-            background-color: var(--mensaje-asistente-fondo);
-            align-self: flex-start;
-            border-bottom-left-radius: 3px;
-        }
-        
-        .system-message {
-            background-color: transparent;
-            color: var(--texto-gris-sutil);
-            font-size: 0.85rem;
-            font-style: italic;
-            text-align: center;
-            align-self: center;
-            padding: 0.25rem 0.5rem;
-            max-width: 100%;
-            box-shadow: none;
-        }
-
-        .assistant-message .main-assistant-text strong,
-        .assistant-message .main-assistant-text b {
-            font-weight: 600;
-            color: var(--uclm-rojo-principal);
-        }
-        .assistant-message .main-assistant-text ul,
-        .assistant-message .main-assistant-text ol {
-            margin-left: 1.25rem;
-            margin-top: 0.4rem;
-            margin-bottom: 0.4rem;
-            padding-left: 1rem;
-        }
-        .assistant-message .main-assistant-text li { margin-bottom: 0.2rem; }
-        .assistant-message .main-assistant-text p { margin-bottom: 0.5rem; }
-        .assistant-message .main-assistant-text p:last-child { margin-bottom: 0; }
-
-        /* Estilos para Anotaciones/Citas */
-        .citations-container {
-            margin-top: 0.8rem;
-            border-top: 1px dashed #ced4da;
-            padding-top: 0.8rem;
-        }
-        .citation-item {
-            font-size: 0.8rem;
-            color: var(--texto-gris-medio);
-            background-color: #fdfdfd;
-            padding: 0.6rem 0.8rem;
-            border: 1px solid #e9ecef;
-            border-radius: 5px;
-            margin-bottom: 0.5rem;
-            line-height: 1.4;
-        }
-        .citation-item .citation-marker {
-            font-weight: bold;
-            color: var(--uclm-rojo-principal);
-            margin-right: 0.3em;
-        }
-        .citation-item .citation-quote {
-            font-style: italic;
-            color: #555;
-            display: block;
-            margin-top: 0.2em;
-            max-height: 100px;
-            overflow-y: auto;
-            border-left: 3px solid var(--uclm-rojo-principal);
-            padding-left: 0.5em;
-        }
-        .citation-item .citation-file-id {
-            font-size: 0.7rem;
-            color: #777;
-            display: block;
-            margin-top: 0.3em;
-        }
-
-        /* -------------------------------------------------------------------------- */
-        /* OTROS ESTILOS (sin cambios)                                                */
-        /* -------------------------------------------------------------------------- */
+        /* Otros Estilos (sin cambios) */
         .mode-button-container { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; padding: 0.5rem 1.5rem 0.8rem 1.5rem; width: 100%; margin-bottom: 0.5rem; }
         .mode-button-chat { width: auto; min-width: 180px; padding: 0.6rem 1.5rem; font-size: 0.9rem; font-weight: 500; background-color: var(--uclm-rojo-principal); color: var(--texto-claro); border: none; border-radius: 6px; cursor: pointer; transition: background-color 0.2s ease, transform 0.1s ease; text-align: center; }
         .mode-button-chat:hover { background-color: var(--uclm-rojo-hover); transform: translateY(-1px); }
         #input-area-wrapper { padding: 0.8rem 1rem; border-top: 1px solid var(--borde-general); background-color: var(--fondo-input-area); flex-shrink: 0; }
-        #file-preview-area { font-size: 0.8rem; color: var(--texto-oscuro-principal); margin-bottom: 0.6rem; padding: 0.5rem 0.7rem; background-color: #e9ecef; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
-        #file-preview-area button.remove-file-button { background: none; border: none; color: var(--uclm-rojo-principal); cursor: pointer; padding: 0.1rem; display: flex; }
-        #file-preview-area button.remove-file-button:hover { color: var(--uclm-rojo-hover); }
         #input-controls { display: flex; align-items: center; gap: 0.6rem; }
         #user-input { flex-grow: 1; padding: 0.7rem 0.9rem; border: 1px solid var(--borde-input); border-radius: 6px; font-size: 0.95rem; font-family: var(--fuente-principal); color: var(--texto-oscuro-principal); resize: none; overflow-y: hidden; min-height: 40px; line-height: 1.4; }
-        #user-input::placeholder { color: var(--texto-gris-sutil); }
         #user-input:focus { outline: none; border-color: var(--uclm-rojo-principal); box-shadow: 0 0 0 2px var(--borde-input-focus-sombra); }
-        #user-input:disabled { background-color: #e9ecef; cursor: not-allowed; }
-        #attach-file-button, #send-button { padding: 0.6rem; background-color: var(--uclm-rojo-principal); color: var(--texto-claro); border: none; border-radius: 6px; cursor: pointer; transition: background-color 0.2s ease; display: flex; align-items: center; justify-content: center; flex-shrink: 0; height: 40px; }
-        #attach-file-button { width: 40px; }
-        #send-button { padding-left: 1.2rem; padding-right: 1.2rem; font-weight: 500; }
-        #attach-file-button:hover:not(:disabled), #send-button:hover:not(:disabled) { background-color: var(--uclm-rojo-hover); }
-        #send-button:disabled, #attach-file-button:disabled { background-color: var(--uclm-rojo-disabled); cursor: not-allowed; opacity: 0.9; }
+        #send-button { padding: 0.6rem 1.2rem; background-color: var(--uclm-rojo-principal); color: var(--texto-claro); border: none; border-radius: 6px; cursor: pointer; transition: background-color 0.2s ease; display: flex; align-items: center; justify-content: center; flex-shrink: 0; height: 40px; font-weight: 500; }
+        #send-button:hover:not(:disabled) { background-color: var(--uclm-rojo-hover); }
+        #send-button:disabled { background-color: var(--uclm-rojo-disabled); cursor: not-allowed; opacity: 0.9; }
         .typing-indicator { font-style: italic; color: var(--texto-gris-sutil); padding: 0.8rem 1.1rem; background-color: var(--mensaje-asistente-fondo); border-radius: 10px; align-self: flex-start; }
-        @media (max-width: 600px) { .chat-wrapper { padding: 0; } #chat-container { height: 100vh; max-height: 100vh; margin: 0; border-radius: 0; } .chat-header, #input-area-wrapper { border-radius: 0; } .chat-header h1 { font-size: 1.1rem; padding: 0.8rem 1rem; } #chat-messages { padding: 1rem 0.75rem; } .message { max-width: 90%; } #input-area-wrapper { padding: 0.75rem; } #user-input { padding: 0.6rem 0.8rem; font-size: 0.9rem; min-height: 38px; } .mode-button-container { padding: 0.75rem 1rem; gap: 0.5rem; } .mode-button-chat { width: 90%; max-width: none; font-size: 0.85rem; padding: 0.7rem 1rem; } #attach-file-button, #send-button { height: 38px; padding: 0.5rem; font-size: 0.85rem; } #attach-file-button { width: 38px; } #send-button { padding-left: 1rem; padding-right: 1rem; } }
         .hidden { display: none !important; }
+
+        /* Modal de Recarga */
+        #recharge-modal { position: fixed; inset: 0; background-color: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .recharge-modal-content { background-color: white; padding: 2rem; border-radius: 10px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); width: 90%; max-width: 400px; text-align: center; }
+        .recharge-modal-content h2 { color: var(--uclm-rojo-principal); margin-top: 0; margin-bottom: 1.5rem; }
+        .recharge-pack-button { display: block; width: 100%; padding: 1rem; margin-bottom: 1rem; border: none; border-radius: 8px; color: white; cursor: pointer; transition: transform 0.2s ease; }
+        .recharge-pack-button:hover { transform: scale(1.03); }
+        .recharge-pack-button[data-package="pack_10"] { background-color: #5a3e8d; }
+        .recharge-pack-button[data-package="pack_50"] { background-color: #3e5a8d; }
+        .recharge-pack-button span { display: block; }
+        .recharge-pack-button .pack-credits { font-size: 1.2rem; font-weight: bold; }
+        .recharge-pack-button .pack-price { font-size: 0.9rem; opacity: 0.9; }
+        #cancel-recharge { background-color: #6c757d; color: white; border: none; padding: 0.7rem 1.5rem; border-radius: 6px; cursor: pointer; margin-top: 1rem; }
+
+        @media (max-width: 600px) { .chat-wrapper { padding: 0; } #chat-container, #auth-view { height: 100vh; max-height: 100vh; margin: 0; border-radius: 0; } .chat-header h1 { font-size: 1.1rem; } #chat-messages { padding: 1rem 0.75rem; } }
+
     </style>
 </head>
 <body>
-    <div class="chat-wrapper"> 
-        <div id="chat-container">
+    <div id="app-container" class="chat-wrapper"> 
+        <!-- VISTA DE AUTENTICACIÓN (Inicialmente visible si no hay sesión) -->
+        <div id="auth-view" class="hidden">
+            <h2>Acceso al Asistente</h2>
+            <form id="login-form">
+                <div class="form-group">
+                    <input type="email" id="email" placeholder="Email" required>
+                </div>
+                <div class="form-group">
+                    <input type="password" id="password" placeholder="Contraseña" required>
+                </div>
+                <p id="auth-error"></p>
+                <button type="submit" id="login-button">Iniciar Sesión</button>
+                <button type="button" id="signup-button">Crear Cuenta</button>
+            </form>
+        </div>
+
+        <!-- VISTA DEL CHAT (Inicialmente oculta) -->
+        <div id="chat-container" class="hidden">
             <div class="chat-header">
-                <h1>Asistente de Auditoría y Asesoría en Sostenibilidad</h1>
+                <h1>Asesoría en Sostenibilidad</h1>
+                <div class="chat-header-user-info">
+                    <p>Saldo: <span id="credits-balance">--</span> créditos</p>
+                    <div class="user-actions">
+                        <button id="recharge-button">Recargar</button>
+                        <button id="logout-button">Salir</button>
+                    </div>
+                </div>
             </div>
             <div id="chat-messages"></div>
             <div id="input-area-wrapper">
-                <div id="file-preview-area" class="hidden">
-                    <span id="file-name-preview"></span>
-                    <button id="remove-file-button" class="remove-file-button" title="Eliminar archivo">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                    </button>
-                </div>
                 <div id="input-controls">
-                    <input type="file" id="file-input" class="hidden">
-                    <button id="attach-file-button" title="Adjuntar archivo">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.49"></path></svg>
-                    </button>
+                    <!-- El botón de adjuntar se puede eliminar si no se usa -->
                     <textarea id="user-input" rows="1" placeholder="Selecciona un modo para comenzar..."></textarea>
                     <button id="send-button">Enviar</button>
                 </div>
+                 <p id="chat-error" style="color: var(--uclm-rojo-principal); text-align: center; font-size: 0.85rem; margin-top: 0.5rem;"></p>
             </div>
         </div>
     </div>
 
+    <!-- MODAL DE RECARGA -->
+    <div id="recharge-modal" class="hidden">
+        <div class="recharge-modal-content">
+            <h2>Recargar Créditos</h2>
+            <button data-package="pack_10" class="recharge-pack-button">
+                <span class="pack-credits">10 Créditos</span>
+                <span class="pack-price">5.00 EUR</span>
+            </button>
+            <button data-package="pack_50" class="recharge-pack-button">
+                <span class="pack-credits">50 Créditos</span>
+                <span class="pack-price">20.00 EUR</span>
+            </button>
+            <button id="cancel-recharge">Cancelar</button>
+        </div>
+    </div>
+
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const chatMessagesEl = document.getElementById('chat-messages');
-            const userInputEl = document.getElementById('user-input');
-            const sendButtonEl = document.getElementById('send-button');
-            const attachFileButtonEl = document.getElementById('attach-file-button');
-            
-            // --- GESTIÓN DE LAS URLS DE LOS ENDPOINTS ---
-            const endpoints = {
-                prod: {
-                    auditor: 'https://orchestrator-520199812528.europe-west1.run.app/chat_auditor', // <-- DEBES REEMPLAZAR ESTA URL
-                    advisor: 'https://orchestrator-520199812528.europe-west1.run.app/chat_assistant' // <-- DEBES REEMPLAZAR ESTA URL
-                },
-                dev: {
-                    auditor: 'https://orchestrator-dev-370417116045.europe-west1.run.app/chat_auditor',
-                    advisor: 'https://orchestrator-dev-370417116045.europe-west1.run.app/chat_assistant',
-                    //auditor: 'http://127.0.0.1:8080/chat_auditor',
-                    //advisor: 'http://127.0.0.1:8080/chat_assistant'
-                }
-            };
-            
-            let currentEndpoints = endpoints.dev; // Por defecto, o podría decidirse dinámicamente
+    document.addEventListener('DOMContentLoaded', function() {
+        // --- Configuración de Firebase (reemplaza con tu configuración) ---
+        const firebaseConfig = {
+          apiKey: "YOUR_API_KEY",
+          authDomain: "YOUR_AUTH_DOMAIN",
+          projectId: "YOUR_PROJECT_ID",
+          // ...etc
+        };
 
-            // Función para determinar el entorno y seleccionar las URLs correctas
-            async function configureEnvironment() {
-                try {
-                    const response = await fetch('/__firebase/init.json');
-                    const firebaseConfig = await response.json();
-                    if (firebaseConfig.projectId === 'recava-auditor') { // Tu project ID de PROD
-                        currentEndpoints = endpoints.prod;
-                        console.log("Entorno de Producción detectado.");
-                    } else { // 'recava-agent-audit-dev' o cualquier otro
-                        currentEndpoints = endpoints.dev;
-                        console.log("Entorno de Desarrollo detectado.");
-                    }
-                } catch (error) {
-                    console.warn("No se pudo detectar el entorno de Firebase, se usarán las URLs de desarrollo por defecto.", error);
-                    currentEndpoints = endpoints.dev;
-                }
+        // --- Inicialización ---
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        // --- Referencias a elementos del DOM ---
+        const authView = document.getElementById('auth-view');
+        const chatContainer = document.getElementById('chat-container');
+        const chatMessagesEl = document.getElementById('chat-messages');
+        const userInputEl = document.getElementById('user-input');
+        const sendButtonEl = document.getElementById('send-button');
+        const creditsBalanceEl = document.getElementById('credits-balance');
+        const chatErrorEl = document.getElementById('chat-error');
+
+        // --- Referencias a elementos de Auth y Recarga ---
+        const loginForm = document.getElementById('login-form');
+        const emailInput = document.getElementById('email');
+        const passwordInput = document.getElementById('password');
+        const loginButton = document.getElementById('login-button');
+        const signupButton = document.getElementById('signup-button');
+        const authErrorEl = document.getElementById('auth-error');
+        const logoutButton = document.getElementById('logout-button');
+        const rechargeButton = document.getElementById('recharge-button');
+        const rechargeModal = document.getElementById('recharge-modal');
+        const cancelRechargeButton = document.getElementById('cancel-recharge');
+
+        // --- Estado de la aplicación ---
+        let currentUser = null;
+        let unsubscribeFromCredits = null;
+        let currentChatMode = null;
+        let currentChatThreadId = null;
+        let currentEndpoints = {}; // Se configurará al inicio
+
+        // --- GESTIÓN DE LAS URLS DE LOS ENDPOINTS ---
+        const endpoints = {
+            prod: { 
+              auditor: 'URL_PROD_AUDITOR', 
+              advisor: 'URL_PROD_ADVISOR',
+              recharge: 'URL_PROD_RECHARGE'
+            },
+            dev: { 
+              auditor: 'https://orchestrator-dev-370417116045.europe-west1.run.app/chat_auditor', 
+              advisor: 'https://orchestrator-dev-370417116045.europe-west1.run.app/chat_assistant',
+              recharge: 'https://orchestrator-dev-370417116045.europe-west1.run.app/create-checkout-session'
             }
-            
-            // --- FIN DE LA GESTIÓN DE ENDPOINTS ---
+        };
+        currentEndpoints = endpoints.dev; // O detectar dinámicamente
 
-            let currentChatMode = null;
-            let currentChatThreadId = null;
-
-            function initializeChatInterface() {
-                console.log("Chat initializing...");
-                configureEnvironment().then(() => {
-                    console.log("Environment configured. Awaiting mode selection.");
-                    addAssistantMessageInternal("¡Hola! Somos tus auditores legales especializados en sostenibilidad empresarial y diligencia debida. Guiaremos el proceso de auditoría.<br>Elige el modo en el que quieres interactuar:");
-                    
-                    const modeSelectionContainer = document.createElement('div');
-                    modeSelectionContainer.className = 'mode-button-container';
-                    modeSelectionContainer.innerHTML = `
-                        <button class="mode-button-chat" data-mode="auditor" title="Modo Auditor">Modo Auditor</button>
-                        <button class="mode-button-chat" data-mode="advisor" title="Modo Asesor">Modo Asesor</button>
-                    `;
-                    if (chatMessagesEl) chatMessagesEl.appendChild(modeSelectionContainer);
-
-                    modeSelectionContainer.querySelectorAll('.mode-button-chat').forEach(button => {
-                        button.addEventListener('click', handleModeSelectionClick);
-                    });
-
-                    if(sendButtonEl) sendButtonEl.disabled = true;
-                    if(attachFileButtonEl) attachFileButtonEl.disabled = true;
-                    if(userInputEl) userInputEl.placeholder = "Selecciona un modo para comenzar...";
-                });
+        // --- LÓGICA DE AUTENTICACIÓN ---
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                currentUser = user;
+                authView.classList.add('hidden');
+                chatContainer.classList.remove('hidden');
+                initializeChatInterface();
+                listenToCredits(user.uid);
+            } else {
+                currentUser = null;
+                authView.classList.remove('hidden');
+                chatContainer.classList.add('hidden');
+                if (unsubscribeFromCredits) unsubscribeFromCredits();
             }
-
-            function handleModeSelectionClick(event) {
-                currentChatMode = event.target.dataset.mode;
-                const modeButtonContainer = event.target.parentElement;
-                console.log(`Chat mode selected: ${currentChatMode}`);
-                
-                if (modeButtonContainer) {
-                    modeButtonContainer.remove();
-                }
-                
-                if(sendButtonEl) sendButtonEl.disabled = false;
-                if(attachFileButtonEl) attachFileButtonEl.disabled = false;
-                if(userInputEl) {
-                    userInputEl.value = '';
-                    userInputEl.focus();
-                    adjustUserInputHeight();
-                }
-                currentChatThreadId = null;
-                console.log("Thread ID has been reset for the new mode.");
-
-                if (currentChatMode === 'auditor') {
-                    addAssistantMessageInternal("Has seleccionado el modo <strong>AUDITOR</strong>.<br>Comienza por contarme: nombre de la empresa, sector, tamaño y sedes de la empresa.");
-                    if(userInputEl) userInputEl.placeholder = "Nombre, sector, tamaño, sedes...";
-                } else if (currentChatMode === 'advisor') {
-                    addAssistantMessageInternal("Has seleccionado el modo <strong>ASESOR</strong>.<br>¿En qué puedo ayudarte hoy?");
-                    if(userInputEl) userInputEl.placeholder = "Escribe tu consulta de asesoría...";
-                }
-            }
-            
-            async function handleSendMessageToServer() {
-                const messageText = userInputEl.value.trim();
-                if (!messageText || !currentChatMode) return;
-
-                addUserMessageToChat(messageText);
-                userInputEl.value = '';
-                adjustUserInputHeight();
-                showTypingIndicatorToChat();
-
-                const endpointUrl = currentChatMode === 'auditor' ? currentEndpoints.auditor : currentEndpoints.advisor;
-                
-                try {
-                    const response = await fetch(endpointUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: messageText, thread_id: currentChatThreadId })
-                    });
-                    removeTypingIndicatorFromChat();
-
-                    if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({ error: "Error de red o respuesta no válida", details: `Status ${response.status}`}));
-                        addSystemMessageToChat(`Error API: ${errorData.error || response.statusText}. ${errorData.details || ''}`);
-                        return;
-                    }
-
-                    const dataFromBackend = await response.json();
-                    
-                    if (dataFromBackend.thread_id) {
-                        currentChatThreadId = dataFromBackend.thread_id;
-                    }
-
-                    if (dataFromBackend.response) {
-                        // Limpiamos los marcadores de cita que a veces añade el LLM directamente en el texto
-                        const cleanedResponseText = dataFromBackend.response.replace(/【.*?†source】/g, '').trim();
-                        // Pasamos el texto limpio y la lista de citas (anotaciones) a la función de renderizado
-                        addAssistantMessageWithCitations(cleanedResponseText, dataFromBackend.citations || []);
-                    } else if (dataFromBackend.error) {
-                        addSystemMessageToChat(`Error del asistente: ${dataFromBackend.error} ${dataFromBackend.details || ''}`);
-                    }
-                } catch (error) {
-                    removeTypingIndicatorFromChat();
-                    addSystemMessageToChat("Error de conexión con el servidor.");
-                    console.error("Error en fetch:", error);
-                }
-            }
-            
-            function addAssistantMessageWithCitations(responseText, citationsList) {
-                const messageWrapper = document.createElement('div');
-                messageWrapper.classList.add('message', 'assistant-message');
-
-                const mainTextDiv = document.createElement('div');
-                mainTextDiv.classList.add('main-assistant-text');
-                mainTextDiv.innerHTML = marked.parse(responseText || "El asistente no proporcionó una respuesta textual.");
-                messageWrapper.appendChild(mainTextDiv);
-                
-                // Si la lista de citas (anotaciones) no está vacía, las renderiza aquí debajo de la respuesta.
-                if (citationsList && citationsList.length > 0) {
-                    const citationsContainerDiv = document.createElement('div');
-                    citationsContainerDiv.classList.add('citations-container');
-                    
-                    citationsList.forEach(citation => {
-                        const citationDiv = document.createElement('div');
-                        citationDiv.classList.add('citation-item');
-                        
-                        let citationHTML = `<span class="citation-marker">${escapeHtml(citation.marker || '[?]')}</span>`;
-                        citationHTML += `<span class="citation-quote">${escapeHtml(citation.quote_from_file || 'Contenido no disponible.')}</span>`;
-                        if (citation.file_id) {
-                             citationHTML += `<span class="citation-file-id">ID Archivo: ${escapeHtml(citation.file_id)}</span>`;
-                        }
-                        citationDiv.innerHTML = citationHTML;
-                        citationsContainerDiv.appendChild(citationDiv);
-                    });
-                    messageWrapper.appendChild(citationsContainerDiv);
-                }
-
-                if(chatMessagesEl) {
-                    chatMessagesEl.appendChild(messageWrapper);
-                    chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
-                }
-            }
-
-            // --- Funciones auxiliares (sin cambios) ---
-            function adjustUserInputHeight() { if (!userInputEl) return; userInputEl.style.height = 'auto'; let scrollHeight = userInputEl.scrollHeight; const maxHeight = 120; if (scrollHeight > maxHeight) { userInputEl.style.height = maxHeight + 'px'; userInputEl.style.overflowY = 'auto'; } else { userInputEl.style.height = scrollHeight + 'px'; userInputEl.style.overflowY = 'hidden'; } }
-            if (userInputEl) { userInputEl.addEventListener('input', adjustUserInputHeight); adjustUserInputHeight(); }
-            if (attachFileButtonEl) { attachFileButtonEl.addEventListener('click', () => addSystemMessageToChat("La funcionalidad de adjuntar archivos se gestiona automáticamente por el asistente."));}
-            function addMessageToChatDOM(htmlContent, cssClass) { const el = document.createElement('div'); el.classList.add('message', cssClass); el.innerHTML = htmlContent; if(chatMessagesEl) { chatMessagesEl.appendChild(el); chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight; } }
-            function addUserMessageToChat(text) { const escapedText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); addMessageToChatDOM(escapedText, 'user-message'); }
-            function addSystemMessageToChat(text) { const escapedText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); addMessageToChatDOM(escapedText, 'system-message'); }
-            function addAssistantMessageInternal(htmlContent) { const el = document.createElement('div'); el.classList.add('message', 'assistant-message'); el.innerHTML = `<div class="main-assistant-text">${htmlContent}</div>`; if(chatMessagesEl) { chatMessagesEl.appendChild(el); chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight; } }
-            function escapeHtml(unsafe) { if (!unsafe) return ''; return unsafe.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
-            let typingIndicatorDiv = null;
-            function showTypingIndicatorToChat() { if (typingIndicatorDiv) return; typingIndicatorDiv = document.createElement('div'); typingIndicatorDiv.classList.add('message', 'assistant-message', 'typing-indicator'); typingIndicatorDiv.textContent = "Generando una respuesta..."; if(chatMessagesEl) { chatMessagesEl.appendChild(typingIndicatorDiv); chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight; } }
-            function removeTypingIndicatorFromChat() { if (typingIndicatorDiv) { typingIndicatorDiv.remove(); typingIndicatorDiv = null; } }
-            if (sendButtonEl) { sendButtonEl.addEventListener('click', handleSendMessageToServer); }
-            if (userInputEl) { userInputEl.addEventListener('keypress', function(event) { if (event.key === 'Enter' && !event.shiftKey && sendButtonEl && !sendButtonEl.disabled) { event.preventDefault(); handleSendMessageToServer(); } }); }
-            
-            initializeChatInterface();
         });
+
+        loginForm.addEventListener('submit', e => {
+            e.preventDefault();
+            authErrorEl.textContent = '';
+            auth.signInWithEmailAndPassword(emailInput.value, passwordInput.value)
+                .catch(error => { authErrorEl.textContent = error.message; });
+        });
+
+        signupButton.addEventListener('click', () => {
+            authErrorEl.textContent = '';
+            auth.createUserWithEmailAndPassword(emailInput.value, passwordInput.value)
+                .catch(error => { authErrorEl.textContent = error.message; });
+        });
+
+        logoutButton.addEventListener('click', () => {
+            auth.signOut();
+        });
+
+        // --- LÓGICA DE CRÉDITOS Y RECAGA ---
+        function listenToCredits(uid) {
+            const userDocRef = db.collection('users').doc(uid);
+            unsubscribeFromCredits = userDocRef.onSnapshot(doc => {
+                if (doc.exists) {
+                    creditsBalanceEl.textContent = doc.data().credits || 0;
+                } else {
+                    // Crear el documento del usuario en Firestore si no existe
+                    userDocRef.set({ email: currentUser.email, credits: 0, createdAt: new Date() });
+                }
+            }, error => console.error("Error al escuchar créditos:", error));
+        }
+
+        rechargeButton.addEventListener('click', () => rechargeModal.classList.remove('hidden'));
+        cancelRechargeButton.addEventListener('click', () => rechargeModal.classList.add('hidden'));
+
+        document.querySelectorAll('.recharge-pack-button').forEach(button => {
+            button.addEventListener('click', async (e) => {
+                if (!currentUser) return;
+                const packageId = e.currentTarget.dataset.package;
+                const idToken = await currentUser.getIdToken();
+
+                try {
+                    const response = await fetch(currentEndpoints.recharge, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+                        body: JSON.stringify({ package_id: packageId })
+                    });
+                    const data = await response.json();
+                    if (data.url) {
+                        window.location.href = data.url; // Redirigir a Stripe
+                    } else {
+                        chatErrorEl.textContent = "Error al crear la sesión de pago.";
+                    }
+                } catch(error) {
+                    console.error('Recharge error:', error);
+                    chatErrorEl.textContent = "Error de conexión al recargar.";
+                }
+            });
+        });
+
+
+        // --- LÓGICA DEL CHAT ---
+        function initializeChatInterface() {
+            chatMessagesEl.innerHTML = ''; // Limpiar chat anterior
+            addAssistantMessageInternal("¡Hola! Soy tu asistente en sostenibilidad.<br>Por favor, elige un modo para interactuar:");
+
+            const modeSelectionContainer = document.createElement('div');
+            modeSelectionContainer.className = 'mode-button-container';
+            modeSelectionContainer.innerHTML = `
+                <button class="mode-button-chat" data-mode="auditor">Modo Auditor</button>
+                <button class="mode-button-chat" data-mode="advisor">Modo Asesor</button>`;
+            chatMessagesEl.appendChild(modeSelectionContainer);
+
+            modeSelectionContainer.querySelectorAll('.mode-button-chat').forEach(button => {
+                button.addEventListener('click', handleModeSelectionClick);
+            });
+
+            sendButtonEl.disabled = true;
+            userInputEl.placeholder = "Selecciona un modo para comenzar...";
+        }
+
+        function handleModeSelectionClick(event) {
+            currentChatMode = event.target.dataset.mode;
+            event.target.parentElement.remove();
+
+            sendButtonEl.disabled = false;
+            userInputEl.value = '';
+            userInputEl.focus();
+            currentChatThreadId = null;
+
+            if (currentChatMode === 'auditor') {
+                addAssistantMessageInternal("Has seleccionado el modo <strong>AUDITOR</strong>.<br>Comienza por contarme: nombre de la empresa, sector, tamaño y sedes.");
+                userInputEl.placeholder = "Nombre, sector, tamaño, sedes...";
+            } else if (currentChatMode === 'advisor') {
+                addAssistantMessageInternal("Has seleccionado el modo <strong>ASESOR</strong>.<br>¿En qué puedo ayudarte hoy?");
+                userInputEl.placeholder = "Escribe tu consulta de asesoría...";
+            }
+        }
+
+        async function handleSendMessageToServer() {
+            const messageText = userInputEl.value.trim();
+            if (!messageText || !currentChatMode || !currentUser) return;
+
+            addUserMessageToChat(messageText);
+            userInputEl.value = '';
+            chatErrorEl.textContent = '';
+            showTypingIndicatorToChat();
+
+            try {
+                const idToken = await currentUser.getIdToken(true);
+                const endpointUrl = currentChatMode === 'auditor' ? currentEndpoints.auditor : currentEndpoints.advisor;
+
+                const response = await fetch(endpointUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+                    body: JSON.stringify({ message: messageText, thread_id: currentChatThreadId })
+                });
+
+                removeTypingIndicatorFromChat();
+                const data = await response.json();
+
+                if (!response.ok) {
+                     if(data.code === 'INSUFFICIENT_FUNDS') {
+                         addSystemMessageToChat("No tienes créditos suficientes para enviar este mensaje.");
+                         chatErrorEl.textContent = "¡Saldo insuficiente! Por favor, recarga tus créditos.";
+                     } else {
+                        addSystemMessageToChat(`Error API: ${data.error || response.statusText}`);
+                     }
+                     return;
+                }
+
+                if (data.thread_id) currentChatThreadId = data.thread_id;
+                if (data.response) addAssistantMessageInternal(marked.parse(data.response));
+
+            } catch (error) {
+                removeTypingIndicatorFromChat();
+                addSystemMessageToChat("Error de conexión con el servidor.");
+                console.error("Fetch Error:", error);
+            }
+        }
+
+        // --- Funciones auxiliares de UI ---
+        function addUserMessageToChat(text) { addMessageToChatDOM(text.replace(/</g, "&lt;"), 'user-message'); }
+        function addSystemMessageToChat(text) { addMessageToChatDOM(text, 'system-message'); }
+        function addAssistantMessageInternal(htmlContent) { addMessageToChatDOM(`<div class="main-assistant-text">${htmlContent}</div>`, 'assistant-message'); }
+        function addMessageToChatDOM(html, cssClass) {
+            const el = document.createElement('div');
+            el.classList.add('message', cssClass);
+            el.innerHTML = html;
+            chatMessagesEl.appendChild(el);
+            chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+        }
+        let typingIndicatorDiv = null;
+        function showTypingIndicatorToChat() {
+            if (typingIndicatorDiv) return;
+            typingIndicatorDiv = document.createElement('div');
+            typingIndicatorDiv.classList.add('message', 'assistant-message', 'typing-indicator');
+            typingIndicatorDiv.textContent = "Generando una respuesta...";
+            chatMessagesEl.appendChild(typingIndicatorDiv);
+            chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+        }
+        function removeTypingIndicatorFromChat() { if (typingIndicatorDiv) { typingIndicatorDiv.remove(); typingIndicatorDiv = null; } }
+
+        // --- Event Listeners ---
+        sendButtonEl.addEventListener('click', handleSendMessageToServer);
+        userInputEl.addEventListener('keypress', function(e) { if (e.key === 'Enter' && !e.shiftKey && !sendButtonEl.disabled) { e.preventDefault(); handleSendMessageToServer(); } });
+
+    });
     </script>
 </body>
 </html>

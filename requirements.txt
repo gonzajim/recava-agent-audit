@@ -16,3 +16,7 @@ httpx
 # --- Clientes de Google Cloud ---
 google-cloud-firestore
 google-cloud-bigquery  # <-- NUEVA LIBRERÍA
+
+# --- Stripe
+stripe
+firebase-admin

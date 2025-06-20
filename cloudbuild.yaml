@@ -57,6 +57,23 @@ steps:
       - '--force' # Necesario para entornos de CI/CD no interactivos
     waitFor: ['Install-Firebase-Tools'] # Espera a que se instalen las herramientas
 
+  # Paso para desplegar el webhook de Stripe
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    args:
+      - 'gcloud'
+      - 'functions'
+      - 'deploy'
+      - 'stripeWebhook' # Nombre de la función
+      - '--source=./functions/stripeWebhook'
+      - '--trigger-http'
+      - '--runtime=nodejs16' # O la versión que prefieras
+      - '--entry-point=stripeWebhook'
+      - '--region=europe-west1'
+      - '--allow-unauthenticated' # Requerido para que Stripe pueda llamar al webhook
+      - '--set-env-vars=STRIPE_SECRET_KEY=projects/YOUR_PROJECT/secrets/stripe-secret-key/versions/latest,STRIPE_WEBHOOK_SECRET=projects/YOUR_PROJECT/secrets/stripe-webhook-secret/versions/latest'
+
+
+
 # =====================================================================================
 # Definición de las variables con valores POR DEFECTO para el entorno de producción.
 # =====================================================================================
@@ -66,3 +83,4 @@ substitutions:
 
 options:
   defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
+
