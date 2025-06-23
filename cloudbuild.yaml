@@ -3,14 +3,14 @@ steps:
 - name: 'gcr.io/cloud-builders/npm'
   id: 'Admin-Panel-Install'
   args: ['install']
-  dir: 'admin-panel'
+  dir: 'public/admin-panel'
 
 # --- PASO 2: Construir el Panel de Admin (React) ---
-# Este paso crea la carpeta 'admin-panel/build' que Firebase necesita.
+# Este paso crea la carpeta 'public/admin-panel/build' que Firebase necesita.
 - name: 'gcr.io/cloud-builders/npm'
   id: 'Admin-Panel-Build'
   args: ['run', 'build']
-  dir: 'admin-panel'
+  dir: 'public/admin-panel'
   wait_for: ['Admin-Panel-Install']
 
 # --- PASO 3: Instalar dependencias para las Cloud Functions ---
