@@ -14,7 +14,7 @@ steps:
   dir: 'admin-panel'
   wait_for: ['Admin-Panel-Install']
 
-# --- PASO 3: Instalar dependencias para todas las Cloud Functions ---
+# --- PASO 3: Instalar dependencias para las Cloud Functions ---
 - name: 'gcr.io/cloud-builders/npm'
   id: 'Functions-Install'
   args: ['install']
@@ -39,14 +39,18 @@ steps:
     - 'gcloud'
     - 'run'
     - 'deploy'
-    - 'orchestration-backend' # El nombre que le das a tu servicio en Cloud Run
-    - '--source=.' # La fuente es el directorio raíz, donde está app.py
+    - 'orchestration-backend'
+    - '--source=.'
     - '--region=europe-west1'
     - '--platform=managed'
     - '--allow-unauthenticated'
-    # Asegúrate de que los nombres de los secretos aquí coinciden con los que tienes en Secret Manager
     - '--update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest,ORCHESTRATOR_ASSISTANT_ID=ORCHESTRATOR_ASSISTANT_ID:latest,ASISTENTE_ID=ASISTENTE_ID:latest,STRIPE_SECRET_KEY=stripe-secret-key:latest'
   wait_for: ['Deploy-to-Firebase']
 
-# Aumenta el tiempo de espera para evitar timeouts en builds largos
+# Aumenta el tiempo de espera para evitar timeouts
 timeout: '1600s'
+
+# --- SECCIÓN CORREGIDA: OPCIONES DE LOGGING ---
+# Esta sección soluciona el error de "Failed to trigger build"
+options:
+  logging: CLOUD_LOGGING_ONLY
