@@ -1,4 +1,3 @@
-# Ruta: /cloudbuild.yaml
 steps:
 # --- PASO 1: Instalar dependencias del Panel de Admin (React) ---
 - name: 'gcr.io/cloud-builders/npm'
@@ -51,6 +50,11 @@ steps:
 timeout: '1600s'
 
 # --- SECCIÓN CORREGIDA: OPCIONES DE LOGGING ---
-# Esta sección soluciona el error de "Failed to trigger build"
+# Se ha cambiado a 'NONE' como solución alternativa al error de permisos.
+# Esto evita que Cloud Build intente escribir en Cloud Logging. Los logs del
+# build seguirán siendo visibles en la consola de Cloud Build.
+# La solución ideal a largo plazo es otorgar el rol 'Logs Writer' 
+# a la cuenta de servicio: 
+# 'cloud-build-dev-executor@recava-auditor-dev.iam.gserviceaccount.com'.
 options:
-  logging: CLOUD_LOGGING_ONLY
+  logging: NONE
