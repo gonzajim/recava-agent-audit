@@ -11,7 +11,7 @@
     },
     {
       "site": "recava-auditor-dev-panel",
-      "public": "admin-panel/build",
+      "public": "public/admin-panel/build",
       "ignore": [
         "firebase.json",
         "**/.*",
