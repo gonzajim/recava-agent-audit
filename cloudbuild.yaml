@@ -1,86 +1,52 @@
-# =====================================================================================
-# cloudbuild.yaml Parametrizado para Entornos PROD y DEV - Versión Final
-# =====================================================================================
-# Este archivo es una receta ÚNICA. Los triggers de Cloud Build le pasarán
-# las variables _SERVICE_NAME y _FIREBASE_PROJECT_ALIAS para dirigir el despliegue
-# al entorno correcto (Producción o Desarrollo).
-# =====================================================================================
-
+# Ruta: /cloudbuild.yaml
 steps:
-  # -------------------------------------------------------------------------------------
-  # PASO 1: Desplegar el Backend en Cloud Run
-  # -------------------------------------------------------------------------------------
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    id: 'Deploy-Backend-to-Cloud-Run'
-    entrypoint: 'gcloud'
-    args:
-      - '--verbosity=debug'  # <-- AÑADIDO: Muestra los logs de depuración
-      - 'run'
-      - 'deploy'
-      - '${_SERVICE_NAME}'  # <-- VARIABLE: 'orchestrator' para PROD, 'orchestrator-dev' para DEV
-      - '--source'
-      - '.'
-      - '--region'
-      - 'europe-west1'
-      - '--platform'
-      - 'managed'
-      - '--allow-unauthenticated'
-      - '--port'
-      - '8080'
-      - '--project'
-      - '${PROJECT_ID}' # Esta variable es proporcionada automáticamente por Cloud Build
-      # --- LÍNEA DE SECRETOS REINTRODUCIDA ---
-      # Vincula los secretos de Secret Manager como variables de entorno en Cloud Run.
-      - '--update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest,ORCHESTRATOR_ASSISTANT_ID=ORCHESTRATOR_ASSISTANT_ID:latest,ASISTENTE_ID=ASISTENTE_ID:latest,AUDITOR_ID=AUDITOR_ID:latest,BIGQUERY_DATASET_ID=BIGQUERY_DATASET_ID:latest,BIGQUERY_TABLE_ID=BIGQUERY_TABLE_ID:latest'
-      - '--timeout=300s'
-      - '--concurrency=80'
-      - '--cpu=1'
-      - '--memory=512Mi'
+# --- PASO 1: Instalar dependencias del Panel de Admin (React) ---
+- name: 'gcr.io/cloud-builders/npm'
+  id: 'Admin-Panel-Install'
+  args: ['install']
+  dir: 'admin-panel'
 
-  # -------------------------------------------------------------------------------------
-  # PASO 2: Desplegar el Frontend en Firebase Hosting
-  # -------------------------------------------------------------------------------------
-  - name: 'node:18'
-    id: 'Install-Firebase-Tools'
-    entrypoint: 'npm'
-    args: ['install', 'firebase-tools']
+# --- PASO 2: Construir el Panel de Admin (React) ---
+# Este paso crea la carpeta 'admin-panel/build' que Firebase necesita.
+- name: 'gcr.io/cloud-builders/npm'
+  id: 'Admin-Panel-Build'
+  args: ['run', 'build']
+  dir: 'admin-panel'
+  wait_for: ['Admin-Panel-Install']
 
-  - name: 'node:18'
-    id: 'Deploy-Frontend-to-Firebase'
-    entrypoint: './node_modules/.bin/firebase'
-    args:
-      - 'deploy'
-      - '--project'
-      - '${_FIREBASE_PROJECT_ALIAS}' # <-- VARIABLE: 'prod' o 'dev'
-      - '--only'
-      - 'hosting'
-      - '--force' # Necesario para entornos de CI/CD no interactivos
-    waitFor: ['Install-Firebase-Tools'] # Espera a que se instalen las herramientas
+# --- PASO 3: Instalar dependencias para todas las Cloud Functions ---
+- name: 'gcr.io/cloud-builders/npm'
+  id: 'Functions-Install'
+  args: ['install']
+  dir: 'functions'
+  
+# --- PASO 4: Desplegar a Firebase (Hosting y Functions a la vez) ---
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  id: 'Deploy-to-Firebase'
+  entrypoint: 'firebase'
+  args:
+    - 'deploy'
+    - '--project'
+    - '${PROJECT_ID}' # Variable automática de Cloud Build
+    - '--only=hosting,functions'
+    - '--force'
+  wait_for: ['Admin-Panel-Build', 'Functions-Install']
 
-  # Paso para desplegar el webhook de Stripe
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    args:
-      - 'gcloud'
-      - 'functions'
-      - 'deploy'
-      - 'stripeWebhook' # Nombre de la función
-      - '--source=./functions/stripeWebhook'
-      - '--trigger-http'
-      - '--runtime=nodejs16' # O la versión que prefieras
-      - '--entry-point=stripeWebhook'
-      - '--region=europe-west1'
-      - '--allow-unauthenticated' # Requerido para que Stripe pueda llamar al webhook
-      - '--set-env-vars=STRIPE_SECRET_KEY=projects/YOUR_PROJECT/secrets/stripe-secret-key/versions/latest,STRIPE_WEBHOOK_SECRET=projects/YOUR_PROJECT/secrets/stripe-webhook-secret/versions/latest'
+# --- PASO 5: Desplegar el Backend de Orquestación a Cloud Run ---
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  id: 'Deploy-to-Cloud-Run'
+  args:
+    - 'gcloud'
+    - 'run'
+    - 'deploy'
+    - 'orchestration-backend' # El nombre que le das a tu servicio en Cloud Run
+    - '--source=.' # La fuente es el directorio raíz, donde está app.py
+    - '--region=europe-west1'
+    - '--platform=managed'
+    - '--allow-unauthenticated'
+    # Asegúrate de que los nombres de los secretos aquí coinciden con los que tienes en Secret Manager
+    - '--update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest,ORCHESTRATOR_ASSISTANT_ID=ORCHESTRATOR_ASSISTANT_ID:latest,ASISTENTE_ID=ASISTENTE_ID:latest,STRIPE_SECRET_KEY=stripe-secret-key:latest'
+  wait_for: ['Deploy-to-Firebase']
 
-
-
-# =====================================================================================
-# Definición de las variables con valores POR DEFECTO para el entorno de producción.
-# =====================================================================================
-substitutions:
-  _SERVICE_NAME: 'orchestrator'
-  _FIREBASE_PROJECT_ALIAS: 'prod'
-
-options:
-  defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
-
+# Aumenta el tiempo de espera para evitar timeouts en builds largos
+timeout: '1600s'

@@ -1,3 +1,4 @@
+# Ruta: /app.py
 import os
 import time
 import json
@@ -18,14 +19,13 @@ from src.openai_service import execute_invoke_sustainability_expert, process_ass
 # --- 2. Configuración Inicial Unificada ---
 
 # Inicializar Firebase Admin SDK
-# Las credenciales se tomarán automáticamente del entorno de ejecución de GCP
 cred = credentials.ApplicationDefault()
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
 # Cargar las claves de Stripe y la URL del frontend desde variables de entorno
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:8080') # URL para redirección de Stripe
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:8080')
 
 # Define los paquetes de créditos que se pueden comprar
 CREDIT_PACKAGES = {
@@ -43,9 +43,8 @@ def check_auth(f):
         
         id_token = auth_header.split('Bearer ')[1]
         try:
-            # Verificar el token de ID de Firebase
             decoded_token = auth.verify_id_token(id_token)
-            request.user = decoded_token # Adjuntar datos del usuario a la petición
+            request.user = decoded_token
         except Exception as e:
             logger.error(f"Token verification failed: {e}")
             return jsonify({'error': 'Invalid token', 'details': str(e)}), 403
@@ -57,15 +56,11 @@ def check_auth(f):
 # --- 4. Endpoints de la API con Monedero ---
 
 @app.route('/chat_auditor', methods=['POST'])
-@check_auth # Proteger y autenticar el endpoint
+@check_auth
 def chat_with_main_audit_orchestrator():
-    """
-    Gestiona el chat con el orquestador, consumiendo un crédito primero.
-    """
     user_uid = request.user['uid']
     user_ref = db.collection('users').document(user_uid)
     
-    # --- LÓGICA DE CONSUMO DE CRÉDITOS ---
     try:
         @firestore.transactional
         def consume_credit(transaction, user_doc_ref):
@@ -83,12 +78,11 @@ def chat_with_main_audit_orchestrator():
         consume_credit(db.transaction(), user_ref)
     except ValueError as e:
         logger.warning(f"User {user_uid} has insufficient credits.")
-        return jsonify({'error': str(e), 'code': 'INSUFFICIENT_FUNDS'}), 402 # Payment Required
+        return jsonify({'error': str(e), 'code': 'INSUFFICIENT_FUNDS'}), 402
     except Exception as e:
         logger.error(f"Error during credit consumption for user {user_uid}: {e}")
         return jsonify({'error': f'An internal error occurred during payment verification: {str(e)}'}), 500
     
-    # --- LÓGICA ORIGINAL DEL CHAT (si el pago es válido) ---
     endpoint_name, data = "/chat_auditor", request.json
     user_message, thread_id = data.get('message'), data.get('thread_id')
     run_id, run_status = None, "unknown"
@@ -130,15 +124,11 @@ def chat_with_main_audit_orchestrator():
         return jsonify({"error": "Internal server error", "details": str(e), "run_status": run_status}), 500
 
 @app.route('/chat_assistant', methods=['POST'])
-@check_auth # Proteger y autenticar el endpoint
+@check_auth
 def chat_with_sustainability_expert():
-    """
-    Gestiona el chat con el experto, consumiendo un crédito primero.
-    """
     user_uid = request.user['uid']
     user_ref = db.collection('users').document(user_uid)
 
-    # --- LÓGICA DE CONSUMO DE CRÉDITOS (Idéntica al otro endpoint) ---
     try:
         @firestore.transactional
         def consume_credit(transaction, user_doc_ref):
@@ -154,7 +144,6 @@ def chat_with_sustainability_expert():
     except Exception as e:
         return jsonify({'error': f'An internal error occurred during payment verification: {str(e)}'}), 500
 
-    # --- LÓGICA ORIGINAL DEL CHAT ---
     endpoint_name, data = "/chat_assistant", request.json
     user_message, thread_id = data.get('message'), data.get('thread_id')
     run_id, run_status = None, "unknown"
@@ -180,13 +169,9 @@ def chat_with_sustainability_expert():
         persist_conversation_turn(thread_id, user_message, f"API Error: {e}", endpoint_name, run_id=run_id, assistant_name="Exception", user_id=user_uid)
         return jsonify({"error": "Internal server error", "details": str(e), "run_status": run_status}), 500
 
-# --- Endpoint para crear una sesión de pago de Stripe ---
 @app.route('/create-checkout-session', methods=['POST'])
 @check_auth
 def create_checkout_session():
-    """
-    Crea una sesión de Stripe Checkout para comprar un paquete de créditos.
-    """
     data = request.get_json()
     package_id = data.get('package_id')
     user_uid = request.user['uid']
@@ -220,13 +205,11 @@ def create_checkout_session():
         logger.error(f"Stripe session creation failed: {e}")
         return jsonify({'error': str(e)}), 403
 
-# --- Endpoint de Health Check ---
 @app.route('/health', methods=['GET'])
 def health_check():
     """Endpoint para comprobaciones de estado del servicio."""
     return jsonify({"status": "healthy"}), 200
 
-# --- Punto de Entrada de la Aplicación ---
 if __name__ == '__main__':
     app.run(
         host='0.0.0.0',

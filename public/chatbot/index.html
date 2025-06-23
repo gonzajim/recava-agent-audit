@@ -6,7 +6,8 @@
     <title>Asistente de Auditoría en Sostenibilidad</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
-    <!-- SDKs de Firebase (Compatibilidad v9 para usar API legada) -->
+    <script src="/__firebase/init.js"></script>
+
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
@@ -35,11 +36,7 @@
         *, *::before, *::after { box-sizing: border-box; }
         body { font-family: var(--fuente-principal); background-color: var(--fondo-body); margin: 0; color: var(--texto-oscuro-principal); line-height: 1.6; font-size: 16px; }
         .chat-wrapper { display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; padding: 20px; }
-
-        /* Contenedor principal para vistas */
         #app-container { width: 100%; max-width: 800px; margin: 0 auto; }
-
-        /* Vista de Autenticación */
         #auth-view { background-color: var(--fondo-chat); padding: 2rem 2.5rem; border-radius: 10px; box-shadow: 0 5px 20px rgba(0, 0, 0, 0.12); }
         #auth-view h2 { text-align: center; color: var(--uclm-rojo-principal); font-size: 1.5rem; margin-bottom: 1.5rem; }
         #auth-view .form-group { margin-bottom: 1rem; }
@@ -51,8 +48,6 @@
         #signup-button { background-color: #555; margin-top: 0.5rem; }
         #signup-button:hover { background-color: #333; }
         #auth-error { color: var(--uclm-rojo-principal); text-align: center; margin-top: 1rem; font-size: 0.9rem; min-height: 1.2rem; }
-
-        /* ESTRUCTURA PRINCIPAL DEL CHAT */
         #chat-container { width: 100%; max-width: 800px; height: calc(100vh - 40px); max-height: 850px; margin: 0 auto; border-radius: 10px; box-shadow: 0 5px 20px rgba(0, 0, 0, 0.12); display: flex; flex-direction: column; background-color: var(--fondo-chat); overflow: hidden; }
         .chat-header { background-color: var(--uclm-rojo-principal); color: var(--texto-claro); padding: 0.9rem 1.5rem; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; }
         .chat-header h1 { margin: 0; font-size: 1.2rem; font-weight: 500; }
@@ -63,16 +58,11 @@
         .chat-header-user-info button { background: none; border: 1px solid var(--texto-claro); color: var(--texto-claro); padding: 2px 8px; font-size: 0.75rem; border-radius: 4px; cursor: pointer; transition: background-color 0.2s, color 0.2s; }
         .chat-header-user-info button:hover { background-color: var(--texto-claro); color: var(--uclm-rojo-principal); }
         #chat-messages { flex-grow: 1; overflow-y: auto; padding: 1.25rem; display: flex; flex-direction: column; gap: 0.8rem; }
-
-        /* Estilos de Mensajes (sin cambios) */
         .message { padding: 0.8rem 1.1rem; border-radius: 10px; max-width: 85%; line-height: 1.5; word-wrap: break-word; color: var(--texto-gris-parrafos); box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
         .user-message { background-color: var(--mensaje-usuario-fondo); align-self: flex-end; border-bottom-right-radius: 3px; }
         .assistant-message { background-color: var(--mensaje-asistente-fondo); align-self: flex-start; border-bottom-left-radius: 3px; }
         .system-message { background-color: transparent; color: var(--texto-gris-sutil); font-size: 0.85rem; font-style: italic; text-align: center; align-self: center; padding: 0.25rem 0.5rem; max-width: 100%; box-shadow: none; }
         .assistant-message .main-assistant-text strong, .assistant-message .main-assistant-text b { font-weight: 600; color: var(--uclm-rojo-principal); }
-        /* ... resto de estilos de mensaje y citas sin cambios ... */
-
-        /* Otros Estilos (sin cambios) */
         .mode-button-container { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; padding: 0.5rem 1.5rem 0.8rem 1.5rem; width: 100%; margin-bottom: 0.5rem; }
         .mode-button-chat { width: auto; min-width: 180px; padding: 0.6rem 1.5rem; font-size: 0.9rem; font-weight: 500; background-color: var(--uclm-rojo-principal); color: var(--texto-claro); border: none; border-radius: 6px; cursor: pointer; transition: background-color 0.2s ease, transform 0.1s ease; text-align: center; }
         .mode-button-chat:hover { background-color: var(--uclm-rojo-hover); transform: translateY(-1px); }
@@ -85,8 +75,6 @@
         #send-button:disabled { background-color: var(--uclm-rojo-disabled); cursor: not-allowed; opacity: 0.9; }
         .typing-indicator { font-style: italic; color: var(--texto-gris-sutil); padding: 0.8rem 1.1rem; background-color: var(--mensaje-asistente-fondo); border-radius: 10px; align-self: flex-start; }
         .hidden { display: none !important; }
-
-        /* Modal de Recarga */
         #recharge-modal { position: fixed; inset: 0; background-color: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; }
         .recharge-modal-content { background-color: white; padding: 2rem; border-radius: 10px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); width: 90%; max-width: 400px; text-align: center; }
         .recharge-modal-content h2 { color: var(--uclm-rojo-principal); margin-top: 0; margin-bottom: 1.5rem; }
@@ -98,14 +86,11 @@
         .recharge-pack-button .pack-credits { font-size: 1.2rem; font-weight: bold; }
         .recharge-pack-button .pack-price { font-size: 0.9rem; opacity: 0.9; }
         #cancel-recharge { background-color: #6c757d; color: white; border: none; padding: 0.7rem 1.5rem; border-radius: 6px; cursor: pointer; margin-top: 1rem; }
-
         @media (max-width: 600px) { .chat-wrapper { padding: 0; } #chat-container, #auth-view { height: 100vh; max-height: 100vh; margin: 0; border-radius: 0; } .chat-header h1 { font-size: 1.1rem; } #chat-messages { padding: 1rem 0.75rem; } }
-
     </style>
 </head>
 <body>
     <div id="app-container" class="chat-wrapper"> 
-        <!-- VISTA DE AUTENTICACIÓN (Inicialmente visible si no hay sesión) -->
         <div id="auth-view" class="hidden">
             <h2>Acceso al Asistente</h2>
             <form id="login-form">
@@ -121,7 +106,6 @@
             </form>
         </div>
 
-        <!-- VISTA DEL CHAT (Inicialmente oculta) -->
         <div id="chat-container" class="hidden">
             <div class="chat-header">
                 <h1>Asesoría en Sostenibilidad</h1>
@@ -136,7 +120,6 @@
             <div id="chat-messages"></div>
             <div id="input-area-wrapper">
                 <div id="input-controls">
-                    <!-- El botón de adjuntar se puede eliminar si no se usa -->
                     <textarea id="user-input" rows="1" placeholder="Selecciona un modo para comenzar..."></textarea>
                     <button id="send-button">Enviar</button>
                 </div>
@@ -145,7 +128,6 @@
         </div>
     </div>
 
-    <!-- MODAL DE RECARGA -->
     <div id="recharge-modal" class="hidden">
         <div class="recharge-modal-content">
             <h2>Recargar Créditos</h2>
@@ -163,20 +145,11 @@
 
     <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // --- Configuración de Firebase (reemplaza con tu configuración) ---
-        const firebaseConfig = {
-          apiKey: "YOUR_API_KEY",
-          authDomain: "YOUR_AUTH_DOMAIN",
-          projectId: "YOUR_PROJECT_ID",
-          // ...etc
-        };
-
-        // --- Inicialización ---
-        firebase.initializeApp(firebaseConfig);
+        // Firebase se inicializa automáticamente con el script /__firebase/init.js
         const auth = firebase.auth();
         const db = firebase.firestore();
 
-        // --- Referencias a elementos del DOM ---
+        // Referencias a elementos del DOM
         const authView = document.getElementById('auth-view');
         const chatContainer = document.getElementById('chat-container');
         const chatMessagesEl = document.getElementById('chat-messages');
@@ -184,12 +157,9 @@
         const sendButtonEl = document.getElementById('send-button');
         const creditsBalanceEl = document.getElementById('credits-balance');
         const chatErrorEl = document.getElementById('chat-error');
-
-        // --- Referencias a elementos de Auth y Recarga ---
         const loginForm = document.getElementById('login-form');
         const emailInput = document.getElementById('email');
         const passwordInput = document.getElementById('password');
-        const loginButton = document.getElementById('login-button');
         const signupButton = document.getElementById('signup-button');
         const authErrorEl = document.getElementById('auth-error');
         const logoutButton = document.getElementById('logout-button');
@@ -197,29 +167,33 @@
         const rechargeModal = document.getElementById('recharge-modal');
         const cancelRechargeButton = document.getElementById('cancel-recharge');
 
-        // --- Estado de la aplicación ---
+        // Estado de la aplicación
         let currentUser = null;
         let unsubscribeFromCredits = null;
         let currentChatMode = null;
         let currentChatThreadId = null;
-        let currentEndpoints = {}; // Se configurará al inicio
+        let currentEndpoints = {};
+        
+        // Determinar el entorno y las URLs de los endpoints
+        const projectId = firebase.app().options.projectId;
+        // Reemplaza 'recava-auditor' con tu Project ID de producción real
+        if (projectId === 'recava-auditor') {
+            currentEndpoints = {
+                auditor: 'https://orchestration-backend-URL-PRODUCCION.run.app/chat_auditor',
+                advisor: 'https://orchestration-backend-URL-PRODUCCION.run.app/chat_assistant',
+                recharge: 'https://orchestration-backend-URL-PRODUCCION.run.app/create-checkout-session'
+            };
+            console.log("Entorno de Producción detectado.");
+        } else {
+             currentEndpoints = {
+                auditor: 'https://orchestration-backend-auteurl-dev.run.app/chat_auditor', // Reemplaza con tu URL real de dev
+                advisor: 'https://orchestration-backend-auteurl-dev.run.app/chat_assistant', // Reemplaza con tu URL real de dev
+                recharge: 'https://orchestration-backend-auteurl-dev.run.app/create-checkout-session' // Reemplaza con tu URL real de dev
+            };
+            console.log("Entorno de Desarrollo detectado:", projectId);
+        }
 
-        // --- GESTIÓN DE LAS URLS DE LOS ENDPOINTS ---
-        const endpoints = {
-            prod: { 
-              auditor: 'URL_PROD_AUDITOR', 
-              advisor: 'URL_PROD_ADVISOR',
-              recharge: 'URL_PROD_RECHARGE'
-            },
-            dev: { 
-              auditor: 'https://orchestrator-dev-370417116045.europe-west1.run.app/chat_auditor', 
-              advisor: 'https://orchestrator-dev-370417116045.europe-west1.run.app/chat_assistant',
-              recharge: 'https://orchestrator-dev-370417116045.europe-west1.run.app/create-checkout-session'
-            }
-        };
-        currentEndpoints = endpoints.dev; // O detectar dinámicamente
-
-        // --- LÓGICA DE AUTENTICACIÓN ---
+        // LÓGICA DE AUTENTICACIÓN
         auth.onAuthStateChanged(user => {
             if (user) {
                 currentUser = user;
@@ -251,15 +225,14 @@
         logoutButton.addEventListener('click', () => {
             auth.signOut();
         });
-
-        // --- LÓGICA DE CRÉDITOS Y RECAGA ---
+        
+        // LÓGICA DE CRÉDITOS Y RECAGA
         function listenToCredits(uid) {
             const userDocRef = db.collection('users').doc(uid);
             unsubscribeFromCredits = userDocRef.onSnapshot(doc => {
                 if (doc.exists) {
                     creditsBalanceEl.textContent = doc.data().credits || 0;
                 } else {
-                    // Crear el documento del usuario en Firestore si no existe
                     userDocRef.set({ email: currentUser.email, credits: 0, createdAt: new Date() });
                 }
             }, error => console.error("Error al escuchar créditos:", error));
@@ -273,7 +246,7 @@
                 if (!currentUser) return;
                 const packageId = e.currentTarget.dataset.package;
                 const idToken = await currentUser.getIdToken();
-
+                
                 try {
                     const response = await fetch(currentEndpoints.recharge, {
                         method: 'POST',
@@ -282,7 +255,7 @@
                     });
                     const data = await response.json();
                     if (data.url) {
-                        window.location.href = data.url; // Redirigir a Stripe
+                        window.location.href = data.url;
                     } else {
                         chatErrorEl.textContent = "Error al crear la sesión de pago.";
                     }
@@ -293,22 +266,19 @@
             });
         });
 
-
-        // --- LÓGICA DEL CHAT ---
+        // LÓGICA DEL CHAT
         function initializeChatInterface() {
-            chatMessagesEl.innerHTML = ''; // Limpiar chat anterior
+            chatMessagesEl.innerHTML = '';
             addAssistantMessageInternal("¡Hola! Soy tu asistente en sostenibilidad.<br>Por favor, elige un modo para interactuar:");
-
+            
             const modeSelectionContainer = document.createElement('div');
             modeSelectionContainer.className = 'mode-button-container';
-            modeSelectionContainer.innerHTML = `
-                <button class="mode-button-chat" data-mode="auditor">Modo Auditor</button>
-                <button class="mode-button-chat" data-mode="advisor">Modo Asesor</button>`;
+            modeSelectionContainer.innerHTML = `<button class="mode-button-chat" data-mode="auditor">Modo Auditor</button><button class="mode-button-chat" data-mode="advisor">Modo Asesor</button>`;
             chatMessagesEl.appendChild(modeSelectionContainer);
 
             modeSelectionContainer.querySelectorAll('.mode-button-chat').forEach(button => {
                 button.addEventListener('click', handleModeSelectionClick);
-            });
+});
 
             sendButtonEl.disabled = true;
             userInputEl.placeholder = "Selecciona un modo para comenzar...";
@@ -317,7 +287,7 @@
         function handleModeSelectionClick(event) {
             currentChatMode = event.target.dataset.mode;
             event.target.parentElement.remove();
-
+            
             sendButtonEl.disabled = false;
             userInputEl.value = '';
             userInputEl.focus();
@@ -331,7 +301,7 @@
                 userInputEl.placeholder = "Escribe tu consulta de asesoría...";
             }
         }
-
+        
         async function handleSendMessageToServer() {
             const messageText = userInputEl.value.trim();
             if (!messageText || !currentChatMode || !currentUser) return;
@@ -344,13 +314,13 @@
             try {
                 const idToken = await currentUser.getIdToken(true);
                 const endpointUrl = currentChatMode === 'auditor' ? currentEndpoints.auditor : currentEndpoints.advisor;
-
+                
                 const response = await fetch(endpointUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
                     body: JSON.stringify({ message: messageText, thread_id: currentChatThreadId })
                 });
-
+                
                 removeTypingIndicatorFromChat();
                 const data = await response.json();
 
@@ -363,7 +333,7 @@
                      }
                      return;
                 }
-
+                
                 if (data.thread_id) currentChatThreadId = data.thread_id;
                 if (data.response) addAssistantMessageInternal(marked.parse(data.response));
 
@@ -374,7 +344,6 @@
             }
         }
 
-        // --- Funciones auxiliares de UI ---
         function addUserMessageToChat(text) { addMessageToChatDOM(text.replace(/</g, "&lt;"), 'user-message'); }
         function addSystemMessageToChat(text) { addMessageToChatDOM(text, 'system-message'); }
         function addAssistantMessageInternal(htmlContent) { addMessageToChatDOM(`<div class="main-assistant-text">${htmlContent}</div>`, 'assistant-message'); }
@@ -396,10 +365,8 @@
         }
         function removeTypingIndicatorFromChat() { if (typingIndicatorDiv) { typingIndicatorDiv.remove(); typingIndicatorDiv = null; } }
 
-        // --- Event Listeners ---
         sendButtonEl.addEventListener('click', handleSendMessageToServer);
         userInputEl.addEventListener('keypress', function(e) { if (e.key === 'Enter' && !e.shiftKey && !sendButtonEl.disabled) { e.preventDefault(); handleSendMessageToServer(); } });
-
     });
     </script>
 </body>
