@@ -52,3 +52,15 @@ Al llamar a `/chat_auditor` o `/chat_assistant` se verifica el token enviado en
 saldo es insuficiente se devuelve un error 402. Para adquirir nuevos créditos el
 endpoint `/create-checkout-session` genera una sesión de pago de Stripe
 asociada al usuario.
+
+## Variables de entorno necesarias
+
+Para ejecutar el orquestador se requieren las siguientes variables de entorno:
+
+- `OPENAI_API_KEY` – clave de API para invocar los asistentes de OpenAI.
+- `ORCHESTRATOR_ASSISTANT_ID` – identificador del assistant principal.
+- `ASISTENTE_ID` – identificador del assistant de sostenibilidad.
+- `STRIPE_API_KEY` – clave secreta utilizada por la integración de Stripe para
+  crear sesiones de pago.
+- `BIGQUERY_DATASET_ID` – dataset de BigQuery donde se almacenan los datos.
+- `BIGQUERY_TABLE_ID` – tabla de BigQuery de auditoría.

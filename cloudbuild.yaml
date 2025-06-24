@@ -40,10 +40,19 @@ steps:
   # -------------------------------------------------------------------------------------
   # PASO 2: Desplegar el Frontend en Firebase Hosting
   # -------------------------------------------------------------------------------------
+    - name: 'node:18'
+      id: 'Install-Firebase-Tools'
+      entrypoint: 'npm'
+      args: ['install', 'firebase-tools']
+
   - name: 'node:18'
-    id: 'Install-Firebase-Tools'
-    entrypoint: 'npm'
-    args: ['install', 'firebase-tools']
+    id: 'Build-Admin-Panel'
+    dir: 'public/admin-panel'
+    entrypoint: 'sh'
+    args:
+      - '-c'
+      - 'npm ci && npm run build'
+    waitFor: ['Install-Firebase-Tools']
 
   - name: 'node:18'
     id: 'Deploy-Frontend-to-Firebase'
@@ -55,7 +64,7 @@ steps:
       - '--only'
       - 'hosting'
       - '--force' # Necesario para entornos de CI/CD no interactivos
-    waitFor: ['Install-Firebase-Tools'] # Espera a que se instalen las herramientas
+    waitFor: ['Build-Admin-Panel'] # Espera a que se compile el panel
 
 # =====================================================================================
 # Definición de las variables con valores POR DEFECTO para el entorno de producción.
