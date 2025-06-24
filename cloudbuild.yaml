@@ -3,14 +3,14 @@ steps:
 - name: 'gcr.io/cloud-builders/npm'
   id: 'Admin-Panel-Install'
   args: ['install']
-  dir: 'admin-panel'
+  dir: 'public/admin-panel'
 
 # --- PASO 2: Construir el Panel de Admin (React) ---
-# Este paso crea la carpeta 'admin-panel/build' que Firebase necesita.
+# Este paso crea la carpeta 'public/admin-panel/build' que Firebase necesita.
 - name: 'gcr.io/cloud-builders/npm'
   id: 'Admin-Panel-Build'
   args: ['run', 'build']
-  dir: 'admin-panel'
+  dir: 'public/admin-panel'
   wait_for: ['Admin-Panel-Install']
 
 # --- PASO 3: Instalar dependencias para las Cloud Functions ---
@@ -50,11 +50,9 @@ steps:
 timeout: '1600s'
 
 # --- SECCIÓN CORREGIDA: OPCIONES DE LOGGING ---
-# Se ha cambiado a 'NONE' como solución alternativa al error de permisos.
-# Esto evita que Cloud Build intente escribir en Cloud Logging. Los logs del
-# build seguirán siendo visibles en la consola de Cloud Build.
-# La solución ideal a largo plazo es otorgar el rol 'Logs Writer' 
-# a la cuenta de servicio: 
-# 'cloud-build-dev-executor@recava-auditor-dev.iam.gserviceaccount.com'.
+# Se restablece el envío de logs a Cloud Logging. Es necesario otorgar el
+# rol 'Logs Writer' a la cuenta de servicio
+# 'cloud-build-dev-executor@recava-auditor-dev.iam.gserviceaccount.com'
+# para que Cloud Build pueda escribir en Cloud Logging.
 options:
-  logging: NONE
+  logging: CLOUD_LOGGING_ONLY
