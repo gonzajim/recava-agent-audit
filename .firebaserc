@@ -1,6 +1,7 @@
 {
   "projects": {
     "prod": "recava-auditor",
-    "dev": "recava-auditor-dev"
+    "dev": "recava-auditor-dev",
+    "default": "recava-auditor-dev"
   }
 }

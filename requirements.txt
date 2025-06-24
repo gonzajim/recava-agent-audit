@@ -1,8 +1,18 @@
+# requirements.txt
+
+# --- Framework Web y Servidor ---
 Flask
 Flask-Cors
 gunicorn
+
+# --- Cliente de OpenAI ---
 openai
-python-dotenv
-google-cloud-firestore
 packaging
+
+# --- Utilidades ---
+python-dotenv
 httpx
+
+# --- Clientes de Google Cloud ---
+google-cloud-firestore
+google-cloud-bigquery  # <-- NUEVA LIBRERÍA

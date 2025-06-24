@@ -31,7 +31,7 @@ steps:
       - '${PROJECT_ID}' # Esta variable es proporcionada automáticamente por Cloud Build
       # --- LÍNEA DE SECRETOS REINTRODUCIDA ---
       # Vincula los secretos de Secret Manager como variables de entorno en Cloud Run.
-      - '--update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest,ORCHESTRATOR_ASSISTANT_ID=ORCHESTRATOR_ASSISTANT_ID:latest,ASISTENTE_ID=ASISTENTE_ID:latest,AUDITOR_ID=AUDITOR_ID:latest'
+      - '--update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest,ORCHESTRATOR_ASSISTANT_ID=ORCHESTRATOR_ASSISTANT_ID:latest,ASISTENTE_ID=ASISTENTE_ID:latest,AUDITOR_ID=AUDITOR_ID:latest,BIGQUERY_DATASET_ID=BIGQUERY_DATASET_ID:latest,BIGQUERY_TABLE_ID=BIGQUERY_TABLE_ID:latest'
       - '--timeout=300s'
       - '--concurrency=80'
       - '--cpu=1'
