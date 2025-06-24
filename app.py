@@ -5,7 +5,8 @@ import json
 from flask import request, jsonify
 
 # --- 1. Importaciones de la configuración y servicios ---
-from src.config import app, logger, client, ORCHESTRATOR_ASSISTANT_ID, ASISTENTE_ID
+from src.config import app, logger, client, ORCHESTRATOR_ASSISTANT_ID, ASISTENTE_ID, auth
+from src.credits_service import deduct_user_credit
 # --- CORRECCIÓN: Usar el nuevo nombre de la función ---
 from src.persistence_service import persist_conversation_turn
 from src.openai_service import execute_invoke_sustainability_expert, process_assistant_message_without_citations
@@ -19,6 +20,15 @@ def chat_with_main_audit_orchestrator():
     run_id, run_status = None, "unknown"
 
     try:
+        auth_header = request.headers.get('Authorization', '')
+        if not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Unauthorized'}), 401
+        id_token = auth_header.split('Bearer ')[1]
+        decoded = auth.verify_id_token(id_token)
+        uid = decoded.get('uid')
+        if not deduct_user_credit(uid):
+            return jsonify({'error': 'Insufficient credits'}), 402
+
         if not user_message: return jsonify({"error": "Invalid request: message is required."}), 400
         if not thread_id: thread_id = client.beta.threads.create().id
         
@@ -63,6 +73,15 @@ def chat_with_sustainability_expert():
     run_id, run_status = None, "unknown"
 
     try:
+        auth_header = request.headers.get('Authorization', '')
+        if not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Unauthorized'}), 401
+        id_token = auth_header.split('Bearer ')[1]
+        decoded = auth.verify_id_token(id_token)
+        uid = decoded.get('uid')
+        if not deduct_user_credit(uid):
+            return jsonify({'error': 'Insufficient credits'}), 402
+
         if not user_message: return jsonify({"error": "Invalid request: message is required."}), 400
         if not thread_id: thread_id = client.beta.threads.create().id
 
@@ -84,6 +103,39 @@ def chat_with_sustainability_expert():
         # --- CORRECCIÓN: Llamar a la función con el nombre correcto ---
         persist_conversation_turn(thread_id, user_message, f"API Error: {e}", endpoint_name, run_id=run_id, assistant_name="Exception")
         return jsonify({"error": "Internal server error", "details": str(e), "run_status": run_status}), 500
+
+@app.route('/create-checkout-session', methods=['POST'])
+def create_checkout_session():
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        return jsonify({'error': 'Unauthorized'}), 401
+    id_token = auth_header.split('Bearer ')[1]
+    decoded = auth.verify_id_token(id_token)
+    uid = decoded.get('uid')
+
+    data = request.json or {}
+    credits = data.get('credits')
+    amount_cents = data.get('amount_cents')
+    if not credits or not amount_cents:
+        return jsonify({'error': 'Invalid request'}), 400
+
+    session = stripe.checkout.Session.create(
+        payment_method_types=['card'],
+        mode='payment',
+        line_items=[{
+            'price_data': {
+                'currency': 'eur',
+                'unit_amount': int(amount_cents),
+                'product_data': {'name': f'{credits} credits'}
+            },
+            'quantity': 1
+        }],
+        success_url=data.get('success_url', 'https://example.com/success'),
+        cancel_url=data.get('cancel_url', 'https://example.com/cancel'),
+        metadata={'uid': uid, 'credits': credits}
+    )
+
+    return jsonify({'checkout_url': session.url})
 
 @app.route('/health', methods=['GET'])
 def health_check():

@@ -43,3 +43,12 @@ la guarda en Cloud Storage o Firestore para consulta y auditoría (Nota: esta fu
 La respuesta estructurada vuelve al front-end, que la muestra en la ventana de chat. Para integraciones de terceros, el mismo endpoint de Cloud Run (`/orchestrate`) funciona como API REST autenticada mediante IAM o IAP. Google CloudStack Overflow
 
 El endpoint `/health` también está disponible para comprobaciones de estado del servicio.
+
+## Sistema de créditos
+
+Los usuarios deben autenticarse con Firebase y disponer de créditos en Firestore.
+Al llamar a `/chat_auditor` o `/chat_assistant` se verifica el token enviado en
+`Authorization` y se descuenta un crédito del documento `users/{uid}`. Si el
+saldo es insuficiente se devuelve un error 402. Para adquirir nuevos créditos el
+endpoint `/create-checkout-session` genera una sesión de pago de Stripe
+asociada al usuario.

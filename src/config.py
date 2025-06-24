@@ -6,6 +6,9 @@ from flask import Flask
 from flask_cors import CORS
 from google.cloud import firestore
 from google.cloud import bigquery  # <-- NUEVO: Importación para BigQuery
+import firebase_admin
+from firebase_admin import auth
+import stripe
 from packaging import version
 
 # --- 1. Inicialización de Flask y CORS ---
@@ -30,6 +33,7 @@ logger.info("Application configuration starting...")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ORCHESTRATOR_ASSISTANT_ID = os.getenv("ORCHESTRATOR_ASSISTANT_ID")
 ASISTENTE_ID = os.getenv("ASISTENTE_ID")
+STRIPE_API_KEY = os.getenv("STRIPE_API_KEY")
 
 if not OPENAI_API_KEY:
     logger.critical("Missing OPENAI_API_KEY environment variable.")
@@ -40,6 +44,9 @@ if not ORCHESTRATOR_ASSISTANT_ID:
 if not ASISTENTE_ID:
     logger.critical("Missing ASISTENTE_ID environment variable.")
     raise ValueError("Missing ASISTENTE_ID environment variable.")
+if not STRIPE_API_KEY:
+    logger.critical("Missing STRIPE_API_KEY environment variable.")
+    raise ValueError("Missing STRIPE_API_KEY environment variable.")
 
 # <-- NUEVO: Variables de Entorno para BigQuery ---
 BIGQUERY_DATASET_ID = os.getenv("BIGQUERY_DATASET_ID")
@@ -64,6 +71,14 @@ try:
     # Cliente de Firestore
     db = firestore.Client()
     logger.info("Firestore client initialized.")
+
+    # Inicializar Firebase Admin para autenticación
+    firebase_admin.initialize_app()
+    logger.info("Firebase Admin initialized.")
+
+    # Inicializar Stripe
+    stripe.api_key = STRIPE_API_KEY
+    logger.info("Stripe client initialized.")
 
     # <-- NUEVO: Cliente de BigQuery ---
     bq_client = bigquery.Client()
