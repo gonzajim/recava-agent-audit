@@ -20,13 +20,12 @@ steps:
   dir: 'functions'
   
 # --- PASO 4: Desplegar a Firebase (Hosting y Functions a la vez) ---
-- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+- name: 'gcr.io/firebase/firebase'
   id: 'Deploy-to-Firebase'
-  entrypoint: 'firebase'
   args:
     - 'deploy'
     - '--project'
-    - '${PROJECT_ID}' # Variable automática de Cloud Build
+    - '${PROJECT_ID}'
     - '--only=hosting,functions'
     - '--force'
   wait_for: ['Admin-Panel-Build', 'Functions-Install']
