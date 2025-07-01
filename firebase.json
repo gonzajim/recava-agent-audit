@@ -4,22 +4,16 @@
   },
   "hosting": [
     {
-      "site": "recava-auditor-dev",
+      "target": "chatbot",
       "public": "public/chatbot",
       "ignore": [
         "firebase.json",
         "**/.*",
         "**/node_modules/**"
-      ],
-      "rewrites": [
-        {
-          "source": "**",
-          "destination": "/index.html"
-        }
       ]
     },
     {
-      "site": "recava-auditor-dev-panel",
+      "target": "admin-panel",
       "public": "public/admin-panel/build",
       "ignore": [
         "firebase.json",
