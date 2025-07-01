@@ -1,5 +1,5 @@
 # =====================================================================================
-# cloudbuild.yaml Parametrizado para Entornos PROD y DEV - Versión Final
+# cloudbuild.yaml Parametrizado para Entornos PROD y DEV - Versión Final Corregida
 # =====================================================================================
 # Este archivo es una receta ÚNICA. Los triggers de Cloud Build le pasarán
 # las variables _SERVICE_NAME y _FIREBASE_PROJECT_ALIAS para dirigir el despliegue
@@ -14,10 +14,10 @@ steps:
     id: 'Deploy-Backend-to-Cloud-Run'
     entrypoint: 'gcloud'
     args:
-      - '--verbosity=debug'  # <-- AÑADIDO: Muestra los logs de depuración
+      - '--verbosity=debug'
       - 'run'
       - 'deploy'
-      - '${_SERVICE_NAME}'  # <-- VARIABLE: 'orchestrator' para PROD, 'orchestrator-dev' para DEV
+      - '${_SERVICE_NAME}'
       - '--source'
       - '.'
       - '--region'
@@ -28,9 +28,7 @@ steps:
       - '--port'
       - '8080'
       - '--project'
-      - '${PROJECT_ID}' # Esta variable es proporcionada automáticamente por Cloud Build
-      # --- LÍNEA DE SECRETOS REINTRODUCIDA ---
-      # Vincula los secretos de Secret Manager como variables de entorno en Cloud Run.
+      - '${PROJECT_ID}'
       - '--update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest,ORCHESTRATOR_ASSISTANT_ID=ORCHESTRATOR_ASSISTANT_ID:latest,ASISTENTE_ID=ASISTENTE_ID:latest,AUDITOR_ID=AUDITOR_ID:latest,BIGQUERY_DATASET_ID=BIGQUERY_DATASET_ID:latest,BIGQUERY_TABLE_ID=BIGQUERY_TABLE_ID:latest'
       - '--timeout=300s'
       - '--concurrency=80'
@@ -38,24 +36,44 @@ steps:
       - '--memory=512Mi'
 
   # -------------------------------------------------------------------------------------
-  # PASO 2: Desplegar el Frontend en Firebase Hosting
+  # PASO 2: Instalar las herramientas de Firebase
   # -------------------------------------------------------------------------------------
   - name: 'node:18'
     id: 'Install-Firebase-Tools'
     entrypoint: 'npm'
     args: ['install', 'firebase-tools']
 
+  # -------------------------------------------------------------------------------------
+  # PASO 3: Construir el Frontend (Admin Panel)
+  # -------------------------------------------------------------------------------------
+  # Instala las dependencias del panel de administración
+  - name: 'gcr.io/cloud-builders/npm'
+    id: 'Install-Admin-Panel-Dependencies'
+    args: ['install']
+    dir: 'public/admin-panel' # Ejecuta el comando en este directorio
+
+  # Compila la aplicación de React y crea la carpeta 'build'
+  - name: 'gcr.io/cloud-builders/npm'
+    id: 'Build-Admin-Panel'
+    args: ['run', 'build']
+    dir: 'public/admin-panel' # Ejecuta el comando en este directorio
+    waitFor: ['Install-Admin-Panel-Dependencies']
+
+  # -------------------------------------------------------------------------------------
+  # PASO 4: Desplegar el Frontend en Firebase Hosting
+  # -------------------------------------------------------------------------------------
   - name: 'node:18'
     id: 'Deploy-Frontend-to-Firebase'
     entrypoint: './node_modules/.bin/firebase'
     args:
       - 'deploy'
       - '--project'
-      - '${_FIREBASE_PROJECT_ALIAS}' # <-- VARIABLE: 'prod' o 'dev'
+      - '${_FIREBASE_PROJECT_ALIAS}'
       - '--only'
       - 'hosting'
-      - '--force' # Necesario para entornos de CI/CD no interactivos
-    waitFor: ['Install-Firebase-Tools'] # Espera a que se instalen las herramientas
+      - '--force'
+    # Espera a que las herramientas de Firebase estén instaladas Y el panel de admin esté construido
+    waitFor: ['Install-Firebase-Tools', 'Build-Admin-Panel']
 
 # =====================================================================================
 # Definición de las variables con valores POR DEFECTO para el entorno de producción.
