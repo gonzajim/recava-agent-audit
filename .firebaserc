@@ -1,7 +1,29 @@
 {
   "projects": {
     "prod": "recava-auditor",
-    "dev": "recava-auditor-dev",
-    "default": "recava-auditor-dev"
+    "dev": "recava-auditor-dev"
+  },
+  "targets": {
+    "recava-auditor-dev": {
+      "hosting": {
+        "chatbot": [
+          "recava-auditor-dev"
+        ],
+        "admin-panel": [
+          "recava-auditor-dev-panel"
+        ]
+      }
+    },
+    "recava-auditor": {
+      "hosting": {
+        "chatbot": [
+          "recava-auditor"
+        ],
+        "admin-panel": [
+          "recava-auditor-panel"
+        ]
+      }
+    }
   }
 }
+
