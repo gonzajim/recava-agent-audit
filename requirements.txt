@@ -1,8 +1,18 @@
-Flask>=2.0.0,<3.1.0 # O la versión específica que estés usando
-gunicorn>=20.0.0,<23.0.0
-openai>=1.3.0 # O la versión específica que estés usando
-python-dotenv>=0.19.0 # Para desarrollo local, no daña en producción
-httpx>=0.27.0 # Descomentar si es una dependencia directa de tu código o de openai
-openai-agents # Descomentar si lo estás usando explícitamente
-google-cloud-firestore>=2.5.0 # Base de datos
-Flask-CORS
+# requirements.txt
+
+# --- Framework Web y Servidor ---
+Flask
+Flask-Cors
+gunicorn
+
+# --- Cliente de OpenAI ---
+openai
+packaging
+
+# --- Utilidades ---
+python-dotenv
+httpx
+
+# --- Clientes de Google Cloud ---
+google-cloud-firestore
+google-cloud-bigquery  # <-- NUEVA LIBRERÍA

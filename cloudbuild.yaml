@@ -1,69 +1,86 @@
-substitutions: {}
+# =====================================================================================
+# cloudbuild.yaml Parametrizado para Entornos PROD y DEV - Versión Final Corregida
+# =====================================================================================
+# Este archivo es una receta ÚNICA. Los triggers de Cloud Build le pasarán
+# las variables _SERVICE_NAME y _FIREBASE_PROJECT_ALIAS para dirigir el despliegue
+# al entorno correcto (Producción o Desarrollo).
+# =====================================================================================
 
 steps:
-  # 1) Construir la imagen del contenedor
-  # Este paso ejecuta 'docker build'. Es CRUCIAL que tu Dockerfile
-  # en el directorio actual ('.') incluya los pasos para instalar
-  # las dependencias de Python desde tu archivo 'requirements.txt'.
-  #
-  # Ejemplo de lo que debería estar en tu Dockerfile:
-  #   # ... (otras directivas como FROM python:3.x-slim)
-  #   WORKDIR /app
-  #   COPY requirements.txt ./
-  #   RUN pip install --no-cache-dir -r requirements.txt  # <-- ESTA LÍNEA INSTALA LAS DEPENDENCIAS
-  #   COPY . .
-  #   # ... (otras directivas como CMD o ENTRYPOINT)
-  #
-  # Además, asegúrate de que 'Flask-CORS' (o 'flask-cors') esté listado
-  # en tu archivo 'requirements.txt'.
-  #
-  # El error 'ModuleNotFoundError: No module named 'flask_cors'' que estás viendo
-  # significa que Flask-CORS no se instaló en la imagen durante este paso de 'docker build',
-  # porque tu Dockerfile no lo hizo o 'requirements.txt' no lo contenía.
-  - name: 'gcr.io/cloud-builders/docker'
-    id: 'Build-Docker-Image' # ID añadido para claridad
-    args: ['build', '-t', 'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator:latest', '.']
-
-  # 2) Empujar la imagen a Artifact Registry
-  # Este paso depende de que la imagen se haya construido correctamente en el paso anterior.
-  - name: 'gcr.io/cloud-builders/docker'
-    id: 'Push-to-Artifact-Registry' # ID añadido para claridad
-    args: ['push', 'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator:latest']
-    waitFor: ['Build-Docker-Image'] # Espera explícitamente a que la compilación termine
-
-  # 3) Desplegar a Cloud Run
-  # Este paso despliega la imagen que fue construida y empujada.
-  # Si la imagen no tiene Flask-CORS instalado (debido a problemas en el paso 1),
-  # la aplicación fallará en tiempo de ejecución en Cloud Run, como has observado.
+  # -------------------------------------------------------------------------------------
+  # PASO 1: Desplegar el Backend en Cloud Run
+  # -------------------------------------------------------------------------------------
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    id: 'Deploy-to-Cloud-Run' # ID añadido para claridad
-    entrypoint: bash
+    id: 'Deploy-Backend-to-Cloud-Run'
+    entrypoint: 'gcloud'
     args:
-      - -c
-      - |
-        # Las siguientes líneas ejecutan el despliegue en Cloud Run.
-        # La configuración de secretos y otros parámetros de servicio están aquí.
-        gcloud run deploy orchestrator \
-          --image=europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator:latest \
-          --region=europe-west1 \
-          --platform=managed \
-          --allow-unauthenticated \
-          --port=8080 \
-          --project=recava-agent-audit \
-          --update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest,ORCHESTRATOR_ASSISTANT_ID=ORCHESTRATOR_ASSISTANT_ID:latest,ASISTENTE_ID=ASISTENTE_ID:latest,AUDITOR_ID=AUDITOR_ID:latest \
-          --timeout=300s \
-          --concurrency=80 \
-          --cpu=1 \
-          --memory=512Mi
-    waitFor: ['Push-to-Artifact-Registry'] # Espera explícitamente a que el push termine
+      - '--verbosity=debug'
+      - 'run'
+      - 'deploy'
+      - '${_SERVICE_NAME}'
+      - '--source'
+      - '.'
+      - '--region'
+      - 'europe-west1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--port'
+      - '8080'
+      - '--project'
+      - '${PROJECT_ID}'
+      - '--update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest,ORCHESTRATOR_ASSISTANT_ID=ORCHESTRATOR_ASSISTANT_ID:latest,ASISTENTE_ID=ASISTENTE_ID:latest,AUDITOR_ID=AUDITOR_ID:latest,BIGQUERY_DATASET_ID=BIGQUERY_DATASET_ID:latest,BIGQUERY_TABLE_ID=BIGQUERY_TABLE_ID:latest'
+      - '--timeout=300s'
+      - '--concurrency=80'
+      - '--cpu=1'
+      - '--memory=512Mi'
 
-images:
-  - 'europe-west1-docker.pkg.dev/recava-agent-audit/orchestrator-repo/orchestrator:latest'
+  # -------------------------------------------------------------------------------------
+  # PASO 2: Instalar las herramientas de Firebase
+  # -------------------------------------------------------------------------------------
+  - name: 'node:18'
+    id: 'Install-Firebase-Tools'
+    entrypoint: 'npm'
+    args: ['install', 'firebase-tools']
+
+  # -------------------------------------------------------------------------------------
+  # PASO 3: Construir el Frontend (Admin Panel)
+  # -------------------------------------------------------------------------------------
+  # Instala las dependencias del panel de administración
+  - name: 'gcr.io/cloud-builders/npm'
+    id: 'Install-Admin-Panel-Dependencies'
+    args: ['install']
+    dir: 'public/admin-panel' # Ejecuta el comando en este directorio
+
+  # Compila la aplicación de React y crea la carpeta 'build'
+  - name: 'gcr.io/cloud-builders/npm'
+    id: 'Build-Admin-Panel'
+    args: ['run', 'build']
+    dir: 'public/admin-panel' # Ejecuta el comando en este directorio
+    waitFor: ['Install-Admin-Panel-Dependencies']
+
+  # -------------------------------------------------------------------------------------
+  # PASO 4: Desplegar el Frontend en Firebase Hosting
+  # -------------------------------------------------------------------------------------
+  - name: 'node:18'
+    id: 'Deploy-Frontend-to-Firebase'
+    entrypoint: './node_modules/.bin/firebase'
+    args:
+      - 'deploy'
+      - '--project'
+      - '${_FIREBASE_PROJECT_ALIAS}'
+      - '--only'
+      - 'hosting'
+      - '--force'
+    # Espera a que las herramientas de Firebase estén instaladas Y el panel de admin esté construido
+    waitFor: ['Install-Firebase-Tools', 'Build-Admin-Panel']
+
+# =====================================================================================
+# Definición de las variables con valores POR DEFECTO para el entorno de producción.
+# =====================================================================================
+substitutions:
+  _SERVICE_NAME: 'orchestrator'
+  _FIREBASE_PROJECT_ALIAS: 'prod'
 
 options:
   defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
-
-# La sección 'availableSecrets' fue eliminada en la versión anterior,
-# ya que se optó por el montaje directo de secretos por Cloud Run.
-# Si la necesitas por alguna otra razón, asegúrate de que su indentación sea correcta
-# y que esté al mismo nivel que 'steps', 'images', 'options'.
