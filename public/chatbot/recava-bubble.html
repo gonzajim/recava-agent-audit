@@ -8,11 +8,16 @@
     <link rel="stylesheet" href="bubble-prod-style.css">
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-</head>
+
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    </head>
 <body>
 
     <h1>Bienvenido a Mi Empresa</h1>
     <p>Esta es una página de ejemplo para mostrar cómo se integra el chat.</p>
+
     <div id="chat-bubble">
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
@@ -27,9 +32,20 @@
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
             </div>
-            <div id="chat-messages"></div>
-            <div id="input-area-wrapper">
-                <div id="file-preview-area" class="hidden">
+
+            <div id="login-view">
+                 <div class="login-box">
+                    <h2>Acceso al Asistente</h2>
+                    <input type="email" id="email-input" placeholder="Correo electrónico" required>
+                    <input type="password" id="password-input" placeholder="Contraseña" required>
+                    <button id="login-button">Entrar</button>
+                    <button id="register-button">Registrarse</button>
+                    <p id="login-error" class="error-message"></p>
+                </div>
+            </div>
+            <div id="chat-messages" style="display: none;"></div>
+            <div id="input-area-wrapper" style="display: none;">
+            <div id="file-preview-area" class="hidden">
                     <span id="file-name-preview"></span>
                     <button id="remove-file-button" class="remove-file-button" title="Eliminar archivo">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
