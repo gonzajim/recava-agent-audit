@@ -21,10 +21,13 @@ if not firebase_admin._apps:
         firebase_admin.initialize_app()
     else:
         cred_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-        if not cred_path or not os.path.exists(cred_path):
-            raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS no está definido o el archivo no existe.")
-        cred = credentials.Certificate(cred_path)
-        firebase_admin.initialize_app(cred)
+        if cred_path and os.path.exists(cred_path):
+            cred = credentials.Certificate(cred_path)
+            firebase_admin.initialize_app(cred)
+        else:
+            logger.info("Firebase Admin: using application default credentials.")
+            cred = credentials.ApplicationDefault()
+            firebase_admin.initialize_app(cred)
 
 
 

@@ -1,6 +1,6 @@
-document.addEventListener('DOMContentLoaded', function() {
+ï»¿document.addEventListener('DOMContentLoaded', function() {
   // ========================================================================
-  // ### 1) CONFIGURACIÓN DE FIREBASE ###
+  // ### 1) CONFIGURACIÃN DE FIREBASE ###
   // ========================================================================
 
   const firebaseConfig = {
@@ -28,18 +28,46 @@ document.addEventListener('DOMContentLoaded', function() {
       auditor: 'https://orchestrator-520199812528.europe-west1.run.app/chat_auditor',
       advisor: 'https://orchestrator-520199812528.europe-west1.run.app/chat_assistant'
     },
+    dev: {
+      auditor: 'https://orchestrator-dev-370417116045.europe-west1.run.app/chat_auditor',
+      advisor: 'https://orchestrator-dev-370417116045.europe-west1.run.app/chat_assistant'
+    },
     local: {
       auditor: 'http://localhost:8080/chat_auditor',
       advisor: 'http://localhost:8080/chat_assistant'
     }
   };
-  let currentEndpoints = (location.hostname === 'localhost') ? endpoints.local : endpoints.prod;
+  let currentEndpoints = endpoints.prod;
+
+  async function configureEnvironment() {
+    if (location.hostname === 'localhost') {
+      currentEndpoints = endpoints.local;
+      return;
+    }
+    try {
+      const response = await fetch('/__firebase/init.json');
+      const firebaseConfigFromHosting = await response.json();
+      if (firebaseConfigFromHosting?.projectId === 'recava-auditor') {
+        currentEndpoints = endpoints.prod;
+        console.log('Entorno de ProducciÃ³n detectado.');
+      } else {
+        currentEndpoints = endpoints.dev;
+        console.log('Entorno de Desarrollo detectado.');
+      }
+    } catch (error) {
+      console.warn('No se pudo detectar el entorno desde __firebase/init.json; se usarÃ¡n los endpoints de desarrollo por defecto.', error);
+      currentEndpoints = endpoints.dev;
+    }
+  }
+
+  const environmentReadyPromise = configureEnvironment();
 
   // ========================================================================
   // ### 2) SELECTORES ###
   // ========================================================================
 
-  const loginViewEl = document.getElementById('login-view');
+  const loginViewEl = document.getElementById('login-view') || document.getElementById('login-container');
+  const chatWrapperEl = document.querySelector('.chat-wrapper');
   const emailInputEl = document.getElementById('email-input');
   const passwordInputEl = document.getElementById('password-input');
   const loginButtonEl = document.getElementById('login-button');
@@ -59,12 +87,12 @@ document.addEventListener('DOMContentLoaded', function() {
   let currentUser = null;
 
   // ========================================================================
-  // ### 3) HELPERS: verificación, reset y token verificado ###
+  // ### 3) HELPERS: verificaciÃ³n, reset y token verificado ###
   // ========================================================================
 
   async function sendVerificationIfNeeded(user) {
     try { if (user && !user.emailVerified) { await user.sendEmailVerification(); } }
-    catch (e) { console.error("No se pudo enviar el email de verificación:", e); }
+    catch (e) { console.error("No se pudo enviar el email de verificaciÃ³n:", e); }
   }
 
   async function reloadAndCheckVerification() {
@@ -81,27 +109,23 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // ========================================================================
-  // ### 4) BANNER DINÁMICO PARA VERIFICACIÓN ###
+  // ### 4) BANNER DINÃMICO PARA VERIFICACIÃN ###
   // ========================================================================
 
   const verifyBanner = document.createElement('div');
+  verifyBanner.classList.add('verify-banner');
   verifyBanner.style.display = 'none';
-  verifyBanner.style.padding = '12px';
-  verifyBanner.style.margin = '12px 0';
-  verifyBanner.style.border = '1px solid #f0c36d';
-  verifyBanner.style.background = '#fff8e1';
-  verifyBanner.style.borderRadius = '8px';
   verifyBanner.innerHTML = `
-    <strong>Revisa tu correo:</strong> te hemos enviado un email para verificar tu cuenta.<br/>
-    <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
-      <button id="btn-verify-retry" class="btn">Ya lo verifiqué</button>
-      <button id="btn-verify-resend" class="btn">Reenviar verificación</button>
-      <button id="btn-verify-logout" class="btn">Cerrar sesión</button>
-      <button id="btn-reset-password" class="btn" style="margin-left:auto;">Olvidé mi contraseña</button>
+    <strong class="verify-banner__title">Revisa tu correo</strong>
+    <span class="verify-banner__subtitle">Te hemos enviado un email para verificar tu cuenta.</span>
+    <div class="verify-banner__actions">
+      <button id="btn-verify-retry" class="verify-banner__button primary">Ya lo verifiqu&eacute;</button>
+      <button id="btn-verify-resend" class="verify-banner__button secondary">Reenviar verificaci&oacute;n</button>
+      <button id="btn-verify-logout" class="verify-banner__button secondary">Cerrar sesi&oacute;n</button>
+      <button id="btn-reset-password" class="verify-banner__button ghost">Olvid&eacute; mi contrase&ntilde;a</button>
     </div>
   `;
   if (loginViewEl) loginViewEl.appendChild(verifyBanner);
-
   verifyBanner.addEventListener('click', async (e) => {
     const id = e.target?.id;
     try {
@@ -111,20 +135,21 @@ document.addEventListener('DOMContentLoaded', function() {
           if (loginErrorEl) { loginErrorEl.style.display = 'none'; }
           verifyBanner.style.display = 'none';
           if (loginViewEl) loginViewEl.style.display = 'none';
+          if (chatWrapperEl) chatWrapperEl.style.display = 'flex';
           if (chatMessagesEl) chatMessagesEl.style.display = 'flex';
           if (inputAreaWrapperEl) inputAreaWrapperEl.style.display = 'block';
           if (chatMessagesEl) chatMessagesEl.innerHTML = '';
-          initializeChatInterface();
+          await initializeChatInterface();
         } else {
           if (loginErrorEl) {
-            loginErrorEl.textContent = "Tu email sigue sin estar verificado. Revisa el buzón o reenvía el correo.";
+            loginErrorEl.textContent = "Tu email sigue sin estar verificado. Revisa el buzÃ³n o reenvÃ­a el correo.";
             loginErrorEl.style.display = 'block';
           }
         }
       } else if (id === 'btn-verify-resend') {
         await sendVerificationIfNeeded(auth.currentUser);
         if (loginErrorEl) {
-          loginErrorEl.textContent = "Hemos reenviado el email de verificación.";
+          loginErrorEl.textContent = "Hemos reenviado el email de verificaciÃ³n.";
           loginErrorEl.style.display = 'block';
         }
       } else if (id === 'btn-verify-logout') {
@@ -134,13 +159,13 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!email) throw new Error("Introduce tu email en el formulario");
         await auth.sendPasswordResetEmail(email);
         if (loginErrorEl) {
-          loginErrorEl.textContent = "Te hemos enviado un enlace para restablecer tu contraseña.";
+          loginErrorEl.textContent = "Te hemos enviado un enlace para restablecer tu contraseÃ±a.";
           loginErrorEl.style.display = 'block';
         }
       }
     } catch (err) {
       if (loginErrorEl) {
-        loginErrorEl.textContent = "Error: " + (err?.message || "Operación no completada");
+        loginErrorEl.textContent = "Error: " + (err?.message || "OperaciÃ³n no completada");
         loginErrorEl.style.display = 'block';
       }
     }
@@ -158,6 +183,7 @@ document.addEventListener('DOMContentLoaded', function() {
       if (!user.emailVerified) {
         if (loginViewEl) loginViewEl.style.display = 'block';
         if (verifyBanner) verifyBanner.style.display = 'block';
+        if (chatWrapperEl) chatWrapperEl.style.display = 'none';
         if (chatMessagesEl) chatMessagesEl.style.display = 'none';
         if (inputAreaWrapperEl) inputAreaWrapperEl.style.display = 'none';
         return;
@@ -166,17 +192,19 @@ document.addEventListener('DOMContentLoaded', function() {
       if (verifyBanner) verifyBanner.style.display = 'none';
       if (loginErrorEl) loginErrorEl.style.display = 'none';
       if (loginViewEl) loginViewEl.style.display = 'none';
+      if (chatWrapperEl) chatWrapperEl.style.display = 'flex';
       if (chatMessagesEl) chatMessagesEl.style.display = 'flex';
       if (inputAreaWrapperEl) inputAreaWrapperEl.style.display = 'block';
 
       if (chatMessagesEl) chatMessagesEl.innerHTML = '';
-      initializeChatInterface();
+      await initializeChatInterface();
 
     } else {
       currentUser = null;
-      console.log("Ningún usuario autenticado.");
+      console.log("NingÃºn usuario autenticado.");
       if (verifyBanner) verifyBanner.style.display = 'none';
       if (loginViewEl) loginViewEl.style.display = 'block';
+      if (chatWrapperEl) chatWrapperEl.style.display = 'none';
       if (chatMessagesEl) chatMessagesEl.style.display = 'none';
       if (inputAreaWrapperEl) inputAreaWrapperEl.style.display = 'none';
     }
@@ -191,7 +219,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const email = emailInputEl.value;
       const password = passwordInputEl.value;
       if (!email || !password) {
-        loginErrorEl.textContent = "Por favor, introduce email y contraseña.";
+        loginErrorEl.textContent = "Por favor, introduce email y contraseÃ±a.";
         loginErrorEl.style.display = 'block';
         return;
       }
@@ -221,7 +249,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const email = emailInputEl.value;
       const password = passwordInputEl.value;
       if (!email || !password) {
-        loginErrorEl.textContent = "Por favor, introduce email y contraseña.";
+        loginErrorEl.textContent = "Por favor, introduce email y contraseÃ±a.";
         loginErrorEl.style.display = 'block';
         return;
       }
@@ -265,9 +293,10 @@ document.addEventListener('DOMContentLoaded', function() {
   let currentChatMode = null;
   let currentChatThreadId = null;
 
-  function initializeChatInterface() {
+  async function initializeChatInterface() {
+    await environmentReadyPromise;
     console.log("Inicializando interfaz de chat para el usuario:", currentUser.email);
-    addAssistantMessageInternal(`¡Hola ${currentUser.email}! Somos tus auditores legales especializados.<br>Elige el modo en el que quieres interactuar:`);
+    addAssistantMessageInternal(`Â¡Hola ${currentUser.email}! Somos tus auditores legales especializados.<br>Elige el modo en el que quieres interactuar:`);
 
     const modeSelectionContainer = document.createElement('div');
     modeSelectionContainer.className = 'mode-button-container';
@@ -297,11 +326,11 @@ document.addEventListener('DOMContentLoaded', function() {
     currentChatThreadId = null;
 
     if (currentChatMode === 'auditor') {
-      addAssistantMessageInternal("Has seleccionado el modo <strong>AUDITOR</strong>.<br>Comienza por contarme: nombre de la empresa, sector, tamaño y sedes.");
-      if (userInputEl) userInputEl.placeholder = "Nombre, sector, tamaño, sedes...";
+      addAssistantMessageInternal("Has seleccionado el modo <strong>AUDITOR</strong>.<br>Comienza por contarme: nombre de la empresa, sector, tama\u00f1o y sedes.");
+      if (userInputEl) userInputEl.placeholder = "Nombre, sector, tama\u00f1o, sedes...";
     } else if (currentChatMode === 'advisor') {
-      addAssistantMessageInternal("Has seleccionado el modo <strong>ASESOR</strong>.<br>¿En qué puedo ayudarte hoy?");
-      if (userInputEl) userInputEl.placeholder = "Escribe tu consulta de asesoría...";
+      addAssistantMessageInternal("Has seleccionado el modo <strong>ASESOR</strong>.<br>Â¿En quÃ© puedo ayudarte hoy?");
+      if (userInputEl) userInputEl.placeholder = "Escribe tu consulta de asesor\u00eda...";
     }
   }
 
@@ -310,7 +339,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!messageText || !currentChatMode) return;
 
     if (!currentUser) {
-      addSystemMessageToChat("Error de autenticación. Por favor, recarga la página.");
+      addSystemMessageToChat("Error de autenticaciÃ³n. Por favor, recarga la pÃ¡gina.");
       return;
     }
 
@@ -344,14 +373,14 @@ document.addEventListener('DOMContentLoaded', function() {
       });
       removeTypingIndicatorFromChat();
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Error de red o respuesta no válida.", details: `Status ${response.status}` }));
+        const errorData = await response.json().catch(() => ({ error: "Error de red o respuesta no vÃ¡lida.", details: `Status ${response.status}` }));
         addSystemMessageToChat(`Error del servidor: ${errorData.error || response.statusText}.`);
         return;
       }
       const dataFromBackend = await response.json();
       if (dataFromBackend.thread_id) { currentChatThreadId = dataFromBackend.thread_id; }
       if (dataFromBackend.response) {
-        const cleanedResponseText = dataFromBackend.response.replace(/【.*?†source】/g, '').trim();
+        const cleanedResponseText = dataFromBackend.response.replace(/Ã£â¬Â.*?Ã¢â¬Â sourceÃ£â¬â/g, '').trim();
         addAssistantMessageWithCitations(cleanedResponseText, dataFromBackend.citations || []);
       } else if (dataFromBackend.error) {
         addSystemMessageToChat(`Error del asistente: ${dataFromBackend.error}`);
@@ -367,10 +396,10 @@ document.addEventListener('DOMContentLoaded', function() {
   // ### 9) AUXILIARES UI ###
   // ========================================================================
 
-  function addAssistantMessageWithCitations(responseText, citationsList) { /* ...código sin cambios... */ const messageWrapper = document.createElement('div'); messageWrapper.classList.add('message', 'assistant-message'); const mainTextDiv = document.createElement('div'); mainTextDiv.classList.add('main-assistant-text'); mainTextDiv.innerHTML = marked.parse(responseText || "El asistente no proporcionó una respuesta textual."); messageWrapper.appendChild(mainTextDiv); if (citationsList && citationsList.length > 0) { const citationsContainerDiv = document.createElement('div'); citationsContainerDiv.classList.add('citations-container'); citationsList.forEach(citation => { const citationDiv = document.createElement('div'); citationDiv.classList.add('citation-item'); let citationHTML = `<span class="citation-marker">${escapeHtml(citation.marker || '[?]')}</span>`; citationHTML += `<span class="citation-quote">${escapeHtml(citation.quote_from_file || 'Contenido no disponible.')}</span>`; if (citation.file_id) { citationHTML += `<span class="citation-file-id">ID Archivo: ${escapeHtml(citation.file_id)}</span>`; } citationDiv.innerHTML = citationHTML; citationsContainerDiv.appendChild(citationDiv); }); messageWrapper.appendChild(citationsContainerDiv); } if(chatMessagesEl) { chatMessagesEl.appendChild(messageWrapper); chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight; } }
+  function addAssistantMessageWithCitations(responseText, citationsList) { /* ...cÃ³digo sin cambios... */ const messageWrapper = document.createElement('div'); messageWrapper.classList.add('message', 'assistant-message'); const mainTextDiv = document.createElement('div'); mainTextDiv.classList.add('main-assistant-text'); mainTextDiv.innerHTML = marked.parse(responseText || "El asistente no proporcionÃ³ una respuesta textual."); messageWrapper.appendChild(mainTextDiv); if (citationsList && citationsList.length > 0) { const citationsContainerDiv = document.createElement('div'); citationsContainerDiv.classList.add('citations-container'); citationsList.forEach(citation => { const citationDiv = document.createElement('div'); citationDiv.classList.add('citation-item'); let citationHTML = `<span class="citation-marker">${escapeHtml(citation.marker || '[?]')}</span>`; citationHTML += `<span class="citation-quote">${escapeHtml(citation.quote_from_file || 'Contenido no disponible.')}</span>`; if (citation.file_id) { citationHTML += `<span class="citation-file-id">ID Archivo: ${escapeHtml(citation.file_id)}</span>`; } citationDiv.innerHTML = citationHTML; citationsContainerDiv.appendChild(citationDiv); }); messageWrapper.appendChild(citationsContainerDiv); } if(chatMessagesEl) { chatMessagesEl.appendChild(messageWrapper); chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight; } }
   function adjustUserInputHeight() { if (!userInputEl) return; userInputEl.style.height = 'auto'; let scrollHeight = userInputEl.scrollHeight; const maxHeight = 120; if (scrollHeight > maxHeight) { userInputEl.style.height = maxHeight + 'px'; userInputEl.style.overflowY = 'auto'; } else { userInputEl.style.height = scrollHeight + 'px'; userInputEl.style.overflowY = 'hidden'; } }
   if (userInputEl) { userInputEl.addEventListener('input', adjustUserInputHeight); adjustUserInputHeight(); }
-  if (attachFileButtonEl) { attachFileButtonEl.addEventListener('click', () => addSystemMessageToChat("La funcionalidad de adjuntar archivos se gestiona automáticamente por el asistente."));}
+  if (attachFileButtonEl) { attachFileButtonEl.addEventListener('click', () => addSystemMessageToChat("La funcionalidad de adjuntar archivos se gestiona automÃ¡ticamente por el asistente."));}
   function addMessageToChatDOM(htmlContent, cssClass) { const el = document.createElement('div'); el.classList.add('message', cssClass); el.innerHTML = htmlContent; if(chatMessagesEl) { chatMessagesEl.appendChild(el); chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight; } }
   function addUserMessageToChat(text) { const escapedText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); addMessageToChatDOM(escapedText, 'user-message'); }
   function addSystemMessageToChat(text) { const escapedText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); addMessageToChatDOM(escapedText, 'system-message'); }
@@ -390,5 +419,11 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  // No llamamos a initializeChatInterface() aquí; lo hace onAuthStateChanged.
+  // No llamamos a initializeChatInterface() aquÃ­; lo hace onAuthStateChanged.
 });
+
+
+
+
+
+
