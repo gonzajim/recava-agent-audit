@@ -2,6 +2,7 @@
 import os
 import time
 import json
+import datetime
 from flask import request, jsonify, abort
 
 # --- 1. Importaciones de la configuración y servicios ---
@@ -14,7 +15,7 @@ from src.bigquery_service import fetch_recent_conversations_for_user, fetch_conv
 # --- 1.b Autenticación Firebase: validar ID token y email verificado ---
 # reemplaza tu bloque de init firebase_admin por:
 import firebase_admin
-from firebase_admin import credentials, auth as fb_auth
+from firebase_admin import credentials, auth as fb_auth, firestore
 
 if not firebase_admin._apps:
     if os.getenv("FIREBASE_AUTH_EMULATOR_HOST"):
@@ -30,6 +31,7 @@ if not firebase_admin._apps:
             cred = credentials.ApplicationDefault()
             firebase_admin.initialize_app(cred)
 
+firestore_db = firestore.client()
 
 
 def require_firebase_user_or_403():
@@ -65,6 +67,86 @@ def _build_user_metadata(decoded_user: dict) -> dict:
         "email": decoded_user.get("email"),
         "email_verified": decoded_user.get("email_verified"),
     }
+
+
+AUDIT_BLOCKS = [
+    {"id": "block_1", "label": "1. Contexto y Alcance"},
+    {"id": "block_2", "label": "2. Información Corporativa"},
+    {"id": "block_3", "label": "3. Cadena de Valor"},
+    {"id": "block_4", "label": "4. Gobernanza y Compliance"},
+    {"id": "block_5", "label": "5. Impacto Ambiental"},
+    {"id": "block_6", "label": "6. Personas y Derechos Humanos"},
+    {"id": "block_7", "label": "7. Riesgos y Controles"},
+    {"id": "block_8", "label": "8. Conclusiones y Roadmap"},
+]
+AUDIT_BLOCK_IDS = {block["id"] for block in AUDIT_BLOCKS}
+
+
+def _normalize_timestamp_iso(value):
+    """Convierte un timestamp (datetime/None/str) a ISO 8601 en UTC."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if isinstance(value, datetime.datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=datetime.timezone.utc)
+        return value.astimezone(datetime.timezone.utc).isoformat()
+    return str(value)
+
+
+def _default_audit_progress_state(uid=None):
+    return {
+        "uid": uid,
+        "blocks": {},
+        "updated_at": datetime.datetime.utcnow().isoformat(),
+    }
+
+
+def _build_audit_progress_payload(thread_id, uid, doc_data):
+    data = doc_data or {}
+    blocks_state = data.get("blocks") or {}
+    blocks_payload = []
+    completed = 0
+    active_block_id = None
+
+    for block in AUDIT_BLOCKS:
+        stored = blocks_state.get(block["id"], {})
+        status = stored.get("status", "pending")
+        if status == "completed":
+            completed += 1
+        elif active_block_id is None:
+            active_block_id = block["id"]
+
+        blocks_payload.append({
+            "id": block["id"],
+            "label": block["label"],
+            "status": status,
+            "summary": stored.get("summary"),
+            "completed_at": _normalize_timestamp_iso(stored.get("completed_at")),
+            "updated_at": _normalize_timestamp_iso(stored.get("updated_at")),
+        })
+
+    if active_block_id is None and AUDIT_BLOCKS:
+        active_block_id = AUDIT_BLOCKS[-1]["id"]
+
+    total = len(AUDIT_BLOCKS)
+    percent = int(round((completed / total) * 100)) if total else 0
+
+    return {
+        "thread_id": thread_id,
+        "uid": uid,
+        "blocks": blocks_payload,
+        "active_block_id": active_block_id,
+        "completed_count": completed,
+        "total_blocks": total,
+        "percent": percent,
+        "updated_at": _normalize_timestamp_iso(data.get("updated_at")),
+    }
+
+
+def _get_audit_progress_doc(thread_id: str):
+    return firestore_db.collection("audit_progress").document(thread_id)
 
 
 # --- 2. Endpoints de la API ---
@@ -220,6 +302,79 @@ def get_chat_history_thread(thread_id: str):
     except Exception as exc:
         logger.error("Failed to fetch chat thread %s for uid=%s: %s", thread_id, uid, exc, exc_info=True)
         return jsonify({"error": "No se pudo obtener la conversacion solicitada."}), 500
+
+
+@app.route('/audit_progress/<thread_id>', methods=['GET'])
+def get_audit_progress(thread_id: str):
+    """Devuelve el estado de progreso de auditoria para un hilo concreto."""
+    decoded_user = require_firebase_user_or_403()
+    uid = decoded_user.get("uid")
+
+    try:
+        doc = _get_audit_progress_doc(thread_id).get()
+        if doc.exists:
+            data = doc.to_dict() or {}
+            stored_uid = data.get("uid")
+            if stored_uid and stored_uid != uid:
+                abort(403, description="No tienes acceso a este progreso de auditoria.")
+        else:
+            data = _default_audit_progress_state(uid=uid)
+    except Exception as exc:
+        logger.error("Failed to fetch audit progress for thread=%s: %s", thread_id, exc, exc_info=True)
+        return jsonify({"error": "No se pudo obtener el progreso de auditoria."}), 500
+
+    payload = _build_audit_progress_payload(thread_id, uid, data)
+    return jsonify(payload), 200
+
+
+@app.route('/audit_progress/<thread_id>', methods=['POST'])
+def update_audit_progress(thread_id: str):
+    """Actualiza el estado de un bloque de auditoria para un hilo."""
+    decoded_user = require_firebase_user_or_403()
+    uid = decoded_user.get("uid")
+
+    body = request.get_json(silent=True) or {}
+    block_id = body.get("block_id")
+    status = (body.get("status") or "completed").strip().lower()
+    summary = body.get("summary")
+
+    if not block_id or block_id not in AUDIT_BLOCK_IDS:
+        abort(400, description="block_id invalido. Debe corresponderse con un bloque del proceso.")
+    if status not in {"pending", "completed"}:
+        abort(400, description="status invalido. Valores permitidos: 'pending' o 'completed'.")
+
+    doc_ref = _get_audit_progress_doc(thread_id)
+    try:
+        doc = doc_ref.get()
+        if doc.exists:
+            data = doc.to_dict() or {}
+            stored_uid = data.get("uid")
+            if stored_uid and stored_uid != uid:
+                abort(403, description="No tienes acceso a este progreso de auditoria.")
+        else:
+            data = _default_audit_progress_state(uid=uid)
+
+        now_iso = datetime.datetime.utcnow().isoformat()
+        block_state = data.setdefault("blocks", {}).get(block_id, {})
+
+        block_state["status"] = status
+        block_state["updated_at"] = now_iso
+        if summary is not None:
+            block_state["summary"] = summary
+
+        block_state["completed_at"] = now_iso if status == "completed" else None
+
+        data["blocks"][block_id] = block_state
+        data["uid"] = uid
+        data["updated_at"] = now_iso
+
+        doc_ref.set(data)
+    except Exception as exc:
+        logger.error("Failed to update audit progress thread=%s block=%s: %s", thread_id, block_id, exc, exc_info=True)
+        return jsonify({"error": "No se pudo actualizar el progreso de auditoria."}), 500
+
+    payload = _build_audit_progress_payload(thread_id, uid, data)
+    return jsonify(payload), 200
 
 
 @app.route('/health', methods=['GET'])

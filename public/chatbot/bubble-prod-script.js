@@ -74,6 +74,17 @@ document.addEventListener('DOMContentLoaded', function () {
   const sendButtonEl = document.getElementById('send-button');
   const attachFileButtonEl = document.getElementById('attach-file-button');
 
+  const AUDIT_BLOCKS_DEFINITION = [
+    { id: 'block_1', label: '1. Contexto y Alcance' },
+    { id: 'block_2', label: '2. Información Corporativa' },
+    { id: 'block_3', label: '3. Cadena de Valor' },
+    { id: 'block_4', label: '4. Gobernanza y Compliance' },
+    { id: 'block_5', label: '5. Impacto Ambiental' },
+    { id: 'block_6', label: '6. Personas y Derechos Humanos' },
+    { id: 'block_7', label: '7. Riesgos y Controles' },
+    { id: 'block_8', label: '8. Conclusiones y Roadmap' },
+  ];
+
   let currentUser = null;
   let currentChatMode = null;
   let currentChatThreadId = null;
@@ -82,6 +93,48 @@ document.addEventListener('DOMContentLoaded', function () {
   const conversationThreadCache = new Map();
   let historySectionState = null;
   let isRestoringHistoryPlayback = false;
+  let auditorProgressPanelEl = null;
+  let auditorProgressTitleEl = null;
+  let auditorProgressPercentEl = null;
+  let auditorProgressBarFillEl = null;
+  let auditorProgressSummaryEl = null;
+  let auditorProgressSummaryTitleEl = null;
+  let auditorProgressSummaryTextEl = null;
+  let auditorProgressListEl = null;
+  let auditorProgressEmptyEl = null;
+  let auditProgressState = null;
+  let isFetchingAuditProgress = false;
+
+  if (chatWrapperEl && chatMessagesEl) {
+    auditorProgressPanelEl = document.createElement('section');
+    auditorProgressPanelEl.className = 'auditor-progress-panel hidden';
+    auditorProgressPanelEl.innerHTML = `
+      <header class="auditor-progress__header">
+        <h3 class="auditor-progress__title">Progreso de auditoria</h3>
+        <span class="auditor-progress__percent">0%</span>
+      </header>
+      <div class="auditor-progress__bar">
+        <div class="auditor-progress__bar-fill" style="width:0%;"></div>
+      </div>
+      <div class="auditor-progress__summary hidden">
+        <h4 class="auditor-progress__summary-title"></h4>
+        <p class="auditor-progress__summary-text"></p>
+      </div>
+      <ul class="auditor-progress__list"></ul>
+      <p class="auditor-progress__empty">Selecciona el modo auditor para comenzar el flujo guiado.</p>
+    `;
+    chatWrapperEl.insertBefore(auditorProgressPanelEl, chatMessagesEl);
+    auditorProgressTitleEl = auditorProgressPanelEl.querySelector('.auditor-progress__title');
+    auditorProgressPercentEl = auditorProgressPanelEl.querySelector('.auditor-progress__percent');
+    auditorProgressBarFillEl = auditorProgressPanelEl.querySelector('.auditor-progress__bar-fill');
+    auditorProgressSummaryEl = auditorProgressPanelEl.querySelector('.auditor-progress__summary');
+    auditorProgressSummaryTitleEl = auditorProgressPanelEl.querySelector('.auditor-progress__summary-title');
+    auditorProgressSummaryTextEl = auditorProgressPanelEl.querySelector('.auditor-progress__summary-text');
+    auditorProgressListEl = auditorProgressPanelEl.querySelector('.auditor-progress__list');
+    auditorProgressEmptyEl = auditorProgressPanelEl.querySelector('.auditor-progress__empty');
+    auditorProgressPanelEl.addEventListener('click', handleAuditProgressPanelClick);
+    setAuditProgressState(buildDefaultAuditProgressState());
+  }
 
   // ===================== 3) HELPERS VERIFICACIÓN =====================
   async function sendVerificationIfNeeded(user) {
@@ -158,7 +211,9 @@ document.addEventListener('DOMContentLoaded', function () {
       recentConversationsCache = [];
       conversationThreadCache.clear();
       historySectionState = null;
+      isRestoringHistoryPlayback = false;
       if (!user.emailVerified) {
+        hideAuditorProgressPanel();
         loginViewEl.style.display = 'block';
         verifyBanner.style.display = 'block';
         document.querySelector('.chat-wrapper').style.display = 'none';
@@ -179,6 +234,8 @@ document.addEventListener('DOMContentLoaded', function () {
       recentConversationsCache = [];
       conversationThreadCache.clear();
       historySectionState = null;
+      isRestoringHistoryPlayback = false;
+      hideAuditorProgressPanel();
       verifyBanner.style.display = 'none';
       loginViewEl.style.display = 'block';
       document.querySelector('.chat-wrapper').style.display = 'none';
@@ -233,6 +290,8 @@ document.addEventListener('DOMContentLoaded', function () {
   // ===================== 8) SELECCIÓN (3 FILAS) =====================
   async function initializeSelectionLayout() {
     await environmentReadyPromise;
+
+    hideAuditorProgressPanel();
 
     // Fila 3 deshabilitada hasta elegir modo
     sendButtonEl.disabled = true;
@@ -528,11 +587,346 @@ document.addEventListener('DOMContentLoaded', function () {
     return data;
   }
 
+  async function fetchAuditProgressForThread(threadId) {
+    await environmentReadyPromise;
+    const baseUrl = getOrchestratorBaseUrl();
+    if (!baseUrl) throw new Error('No se pudo determinar la URL del orquestador.');
+    const token = await getVerifiedIdTokenOrThrow();
+    const resp = await fetch(`${baseUrl}/audit_progress/${encodeURIComponent(threadId)}`, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    if (!resp.ok) {
+      let message = `Error ${resp.status}`;
+      try {
+        const payload = await resp.json();
+        if (payload?.error) message = payload.error;
+      } catch (_err) {
+        // noop
+      }
+      throw new Error(message);
+    }
+
+    return await resp.json();
+  }
+
+  async function updateAuditProgressBlockStatus(threadId, blockId, status, summary) {
+    await environmentReadyPromise;
+    const baseUrl = getOrchestratorBaseUrl();
+    if (!baseUrl) throw new Error('No se pudo determinar la URL del orquestador.');
+    const token = await getVerifiedIdTokenOrThrow();
+    const resp = await fetch(`${baseUrl}/audit_progress/${encodeURIComponent(threadId)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        block_id: blockId,
+        status,
+        summary,
+      }),
+    });
+
+    if (!resp.ok) {
+      let message = `Error ${resp.status}`;
+      try {
+        const payload = await resp.json();
+        if (payload?.error) message = payload.error;
+      } catch (_err) {
+        // noop
+      }
+      throw new Error(message);
+    }
+
+    return await resp.json();
+  }
+
   function determineModeFromEndpoint(endpointSource) {
     if (!endpointSource) return currentChatMode || 'advisor';
     if (endpointSource.includes('auditor')) return 'auditor';
     if (endpointSource.includes('assistant')) return 'advisor';
     return currentChatMode || 'advisor';
+  }
+
+  function showAuditorProgressPanel() {
+    if (!auditorProgressPanelEl) return;
+    auditorProgressPanelEl.classList.remove('hidden');
+    renderAuditProgressPanel();
+    if (currentChatThreadId) {
+      refreshAuditProgress(currentChatThreadId);
+    }
+  }
+
+  function hideAuditorProgressPanel() {
+    if (!auditorProgressPanelEl) return;
+    auditorProgressPanelEl.classList.add('hidden');
+  }
+
+  function buildDefaultAuditProgressState() {
+    const blocks = AUDIT_BLOCKS_DEFINITION.map((block) => ({
+      id: block.id,
+      label: block.label,
+      status: 'pending',
+      summary: null,
+      completed_at: null,
+      updated_at: null,
+    }));
+    return {
+      thread_id: currentChatThreadId || null,
+      active_block_id: blocks[0]?.id || null,
+      completed_count: 0,
+      total_blocks: blocks.length,
+      percent: 0,
+      blocks,
+    };
+  }
+
+  function normalizeAuditProgressState(state) {
+    const defaultState = buildDefaultAuditProgressState();
+    if (!state || !Array.isArray(state.blocks)) {
+      return defaultState;
+    }
+
+    const incomingBlocks = new Map(state.blocks.map(block => [block.id, block]));
+    const normalizedBlocks = AUDIT_BLOCKS_DEFINITION.map((definition) => {
+      const info = incomingBlocks.get(definition.id) || {};
+      return {
+        id: definition.id,
+        label: info.label || definition.label,
+        status: info.status === 'completed' ? 'completed' : 'pending',
+        summary: info.summary || null,
+        completed_at: info.completed_at || null,
+        updated_at: info.updated_at || null,
+      };
+    });
+
+    const completed = normalizedBlocks.filter(block => block.status === 'completed').length;
+    const total = normalizedBlocks.length;
+    let activeBlockId = state.active_block_id;
+
+    if (!activeBlockId || !normalizedBlocks.some(block => block.id === activeBlockId)) {
+      activeBlockId = normalizedBlocks.find(block => block.status !== 'completed')?.id
+        || normalizedBlocks[normalizedBlocks.length - 1]?.id
+        || null;
+    }
+
+    const percent = typeof state.percent === 'number'
+      ? Math.max(0, Math.min(100, Math.round(state.percent)))
+      : (total ? Math.round((completed / total) * 100) : 0);
+
+    return {
+      thread_id: state.thread_id || currentChatThreadId || null,
+      active_block_id: activeBlockId,
+      completed_count: typeof state.completed_count === 'number' ? state.completed_count : completed,
+      total_blocks: typeof state.total_blocks === 'number' ? state.total_blocks : total,
+      percent,
+      blocks: normalizedBlocks,
+    };
+  }
+
+  function setAuditProgressState(state) {
+    auditProgressState = normalizeAuditProgressState(state);
+    renderAuditProgressPanel();
+  }
+
+  function renderAuditProgressPanel() {
+    if (!auditorProgressPanelEl) return;
+    const state = auditProgressState || buildDefaultAuditProgressState();
+    const totalBlocks = state.total_blocks || state.blocks.length || AUDIT_BLOCKS_DEFINITION.length;
+    const completedBlocks = typeof state.completed_count === 'number'
+      ? state.completed_count
+      : state.blocks.filter(block => block.status === 'completed').length;
+    const percent = typeof state.percent === 'number'
+      ? state.percent
+      : (totalBlocks ? Math.round((completedBlocks / totalBlocks) * 100) : 0);
+
+    if (auditorProgressTitleEl) {
+      auditorProgressTitleEl.textContent = `Progreso de auditoria (${completedBlocks}/${totalBlocks})`;
+    }
+    if (auditorProgressPercentEl) {
+      auditorProgressPercentEl.textContent = `${percent}%`;
+    }
+    if (auditorProgressBarFillEl) {
+      auditorProgressBarFillEl.style.width = `${percent}%`;
+      auditorProgressBarFillEl.setAttribute('aria-valuenow', String(percent));
+    }
+
+    renderAuditProgressList(state);
+    renderAuditProgressSummary(state);
+  }
+
+  function renderAuditProgressList(state) {
+    if (!auditorProgressListEl || !auditorProgressEmptyEl) return;
+    auditorProgressListEl.innerHTML = '';
+
+    const blocks = state.blocks || [];
+    if (!blocks.length) {
+      auditorProgressEmptyEl.classList.remove('hidden');
+      return;
+    }
+
+    auditorProgressEmptyEl.classList.add('hidden');
+    const activeBlockId = state.active_block_id;
+
+    blocks.forEach((block, idx) => {
+      const li = document.createElement('li');
+      const statusClass = block.status === 'completed' ? 'completed' : (block.id === activeBlockId ? 'active' : 'pending');
+      li.className = `auditor-progress__item auditor-progress__item--${statusClass}`;
+      li.dataset.blockId = block.id;
+
+      const statusLabel = formatAuditBlockStatus(block.status, block.id === activeBlockId);
+
+      li.innerHTML = `
+        <div class="auditor-progress__item-info">
+          <span class="auditor-progress__item-step">${idx + 1}</span>
+          <div class="auditor-progress__item-texts">
+            <span class="auditor-progress__item-label">${escapeHtml(block.label || block.id)}</span>
+            <span class="auditor-progress__item-status">${escapeHtml(statusLabel)}</span>
+          </div>
+        </div>
+        <div class="auditor-progress__item-actions">
+          <button
+            class="auditor-progress__action"
+            type="button"
+            data-action="view-report"
+            data-block-id="${block.id}"
+            ${canViewAuditReport(block, state) ? '' : 'disabled'}
+          >
+            Ver informe
+          </button>
+          <button
+            class="auditor-progress__action auditor-progress__action--complete"
+            type="button"
+            data-action="complete-block"
+            data-block-id="${block.id}"
+            ${canCompleteAuditBlock(block, state) ? '' : 'disabled'}
+          >
+            Marcar completado
+          </button>
+        </div>
+      `;
+
+      auditorProgressListEl.appendChild(li);
+    });
+  }
+
+  function renderAuditProgressSummary(state) {
+    if (!auditorProgressSummaryEl) return;
+
+    const blocks = state.blocks || [];
+    const activeBlock = blocks.find(block => block.id === state.active_block_id) || blocks[0];
+
+    if (!activeBlock) {
+      auditorProgressSummaryEl.classList.add('hidden');
+      return;
+    }
+
+    auditorProgressSummaryEl.classList.remove('hidden');
+    if (auditorProgressSummaryTitleEl) {
+      auditorProgressSummaryTitleEl.textContent = `Bloque activo: ${activeBlock.label || activeBlock.id}`;
+    }
+    if (auditorProgressSummaryTextEl) {
+      const summary = activeBlock.summary;
+      auditorProgressSummaryTextEl.textContent = summary && summary.trim().length
+        ? summary.trim()
+        : 'Aun no hay un informe disponible para este bloque.';
+    }
+  }
+
+  function formatAuditBlockStatus(status, isActive) {
+    if (status === 'completed') return 'Completado';
+    if (isActive) return 'En progreso';
+    return 'Pendiente';
+  }
+
+  function canViewAuditReport(block, state) {
+    if (!block) return false;
+    if (block.summary && block.summary.trim().length) return true;
+    return block.status === 'completed' || block.id === state.active_block_id;
+  }
+
+  function canCompleteAuditBlock(block, state) {
+    if (!block) return false;
+    if (!currentUser || currentChatMode !== 'auditor') return false;
+    return block.status !== 'completed' && block.id === state.active_block_id;
+  }
+
+  function handleAuditProgressPanelClick(event) {
+    const action = event.target?.dataset?.action;
+    if (!action) return;
+    const blockId = event.target.dataset.blockId;
+    if (!blockId) return;
+
+    if (action === 'view-report') {
+      handleViewAuditReport(blockId);
+    } else if (action === 'complete-block') {
+      handleCompleteAuditBlock(blockId, event.target);
+    }
+  }
+
+  function handleViewAuditReport(blockId) {
+    const state = auditProgressState || buildDefaultAuditProgressState();
+    const block = state.blocks.find(b => b.id === blockId);
+    if (!block) return;
+
+    const baseLabel = block.label || block.id;
+    const summary = block.summary && block.summary.trim().length
+      ? block.summary.trim()
+      : 'Todavia no hay un informe disponible para este bloque.';
+
+    addSystemMessageToChat(`Informe de auditoria para "${baseLabel}": ${summary}`);
+  }
+
+  async function handleCompleteAuditBlock(blockId, buttonEl) {
+    if (!currentChatThreadId) {
+      addSystemMessageToChat('Necesitas iniciar una conversacion antes de marcar bloques.');
+      return;
+    }
+
+    if (buttonEl) {
+      buttonEl.disabled = true;
+      buttonEl.dataset.loading = '1';
+      buttonEl.textContent = 'Actualizando...';
+    }
+
+    try {
+      const updated = await updateAuditProgressBlockStatus(currentChatThreadId, blockId, 'completed');
+      setAuditProgressState(updated);
+      addSystemMessageToChat(`El bloque ha sido marcado como completado.`);
+    } catch (error) {
+      console.error('No se pudo actualizar el bloque de auditoria:', error);
+      addSystemMessageToChat('No se pudo actualizar el progreso de auditoria. Intentalo mas tarde.');
+    } finally {
+      if (buttonEl) {
+        if (buttonEl.isConnected) {
+          buttonEl.removeAttribute('data-loading');
+          buttonEl.textContent = 'Marcar completado';
+          buttonEl.disabled = !canCompleteAuditBlock(
+            (auditProgressState?.blocks || []).find(block => block.id === blockId),
+            auditProgressState || buildDefaultAuditProgressState()
+          );
+        }
+      }
+    }
+  }
+
+  async function refreshAuditProgress(threadId) {
+    if (!threadId || isFetchingAuditProgress) return;
+    isFetchingAuditProgress = true;
+    try {
+      const progress = await fetchAuditProgressForThread(threadId);
+      if (progress) setAuditProgressState(progress);
+    } catch (error) {
+      console.error('No se pudo obtener el progreso de auditoria:', error);
+    } finally {
+      isFetchingAuditProgress = false;
+    }
   }
 
   function resumeConversationFromHistory(conversationData) {
@@ -543,6 +937,13 @@ document.addEventListener('DOMContentLoaded', function () {
     currentConversationMessages = Array.isArray(conversationData.messages)
       ? conversationData.messages.slice()
       : [];
+
+    if (currentChatMode === 'auditor') {
+      setAuditProgressState(buildDefaultAuditProgressState());
+      showAuditorProgressPanel();
+    } else {
+      hideAuditorProgressPanel();
+    }
 
     document.querySelector('.selection-container')?.remove();
 
@@ -642,6 +1043,12 @@ document.addEventListener('DOMContentLoaded', function () {
     userInputEl.value = ''; userInputEl.focus(); adjustUserInputHeight();
     currentChatThreadId = null;
     currentConversationMessages = [];
+    if (currentChatMode === 'auditor') {
+      setAuditProgressState(buildDefaultAuditProgressState());
+      showAuditorProgressPanel();
+    } else {
+      hideAuditorProgressPanel();
+    }
     setHistoryStatusMessage('', false);
 
     if (currentChatMode === 'auditor') {
@@ -681,7 +1088,6 @@ document.addEventListener('DOMContentLoaded', function () {
       text: messageText,
       timestamp: new Date().toISOString(),
     });
-
     addUserMessageToChat(messageText);
     userInputEl.value = ''; adjustUserInputHeight();
     showTypingIndicatorToChat();
@@ -714,6 +1120,9 @@ document.addEventListener('DOMContentLoaded', function () {
         addSystemMessageToChat(`Error del asistente: ${data.error}`);
       }
       syncConversationCache(currentChatThreadId, getEndpointSourceForMode(currentChatMode));
+      if (currentChatMode === 'auditor' && currentChatThreadId) {
+        refreshAuditProgress(currentChatThreadId);
+      }
     } catch (e) {
       removeTypingIndicatorFromChat();
       addSystemMessageToChat("No se pudo conectar con el servidor.");
