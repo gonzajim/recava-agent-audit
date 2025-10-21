@@ -9,6 +9,7 @@ from src.config import app, logger, client, ORCHESTRATOR_ASSISTANT_ID, ASISTENTE
 # --- CORRECCIÓN: Usar el nuevo nombre de la función ---
 from src.persistence_service import persist_conversation_turn
 from src.openai_service import execute_invoke_sustainability_expert, process_assistant_message_without_citations
+from src.bigquery_service import fetch_recent_conversations_for_user, fetch_conversation_thread
 
 # --- 1.b Autenticación Firebase: validar ID token y email verificado ---
 # reemplaza tu bloque de init firebase_admin por:
@@ -182,6 +183,43 @@ def chat_with_sustainability_expert():
             run_id=run_id, assistant_name="Exception", **persistence_metadata
         )
         return jsonify({"error": "Internal server error", "details": str(e), "run_status": run_status}), 500
+
+
+@app.route('/chat_history/recents', methods=['GET'])
+def get_recent_chat_history():
+    """Devuelve las ultimas conversaciones de un usuario autenticado."""
+    decoded_user = require_firebase_user_or_403()
+    uid = decoded_user.get("uid")
+
+    try:
+        limit = request.args.get("limit", default=5, type=int)
+    except (TypeError, ValueError):
+        limit = 5
+
+    try:
+        conversations = fetch_recent_conversations_for_user(uid=uid, limit=limit)
+        return jsonify({"conversations": conversations}), 200
+    except ValueError as err:
+        abort(400, description=str(err))
+    except Exception as exc:
+        logger.error("Failed to fetch recent chat history for uid=%s: %s", uid, exc, exc_info=True)
+        return jsonify({"error": "No se pudo obtener el historial reciente."}), 500
+
+
+@app.route('/chat_history/thread/<thread_id>', methods=['GET'])
+def get_chat_history_thread(thread_id: str):
+    """Devuelve todos los mensajes de una conversacion concreta si pertenece al usuario."""
+    decoded_user = require_firebase_user_or_403()
+    uid = decoded_user.get("uid")
+
+    try:
+        conversation = fetch_conversation_thread(uid=uid, thread_id=thread_id)
+        return jsonify(conversation), 200
+    except ValueError as err:
+        abort(400, description=str(err))
+    except Exception as exc:
+        logger.error("Failed to fetch chat thread %s for uid=%s: %s", thread_id, uid, exc, exc_info=True)
+        return jsonify({"error": "No se pudo obtener la conversacion solicitada."}), 500
 
 
 @app.route('/health', methods=['GET'])

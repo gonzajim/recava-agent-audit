@@ -47,6 +47,14 @@ document.addEventListener('DOMContentLoaded', function () {
   }
   const environmentReadyPromise = configureEnvironment();
 
+  function getOrchestratorBaseUrl() {
+    const ref = currentEndpoints?.auditor || currentEndpoints?.advisor;
+    if (!ref) return "";
+    if (ref.includes("/chat_auditor")) return ref.split("/chat_auditor")[0];
+    if (ref.includes("/chat_assistant")) return ref.split("/chat_assistant")[0];
+    return ref.replace(/\/$/, "");
+  }
+
   // ===================== 2) SELECTORES =====================
   const loginViewEl = document.getElementById('login-view') || document.getElementById('login-container');
   const chatWrapperEl = document.querySelector('.chat-wrapper');
@@ -69,6 +77,10 @@ document.addEventListener('DOMContentLoaded', function () {
   let currentUser = null;
   let currentChatMode = null;
   let currentChatThreadId = null;
+  let currentConversationMessages = [];
+  let recentConversationsCache = [];
+  const conversationThreadCache = new Map();
+  let historySectionState = null;
 
   // ===================== 3) HELPERS VERIFICACIÓN =====================
   async function sendVerificationIfNeeded(user) {
@@ -141,6 +153,10 @@ document.addEventListener('DOMContentLoaded', function () {
   auth.onAuthStateChanged(async (user) => {
     if (user) {
       currentUser = user;
+      currentConversationMessages = [];
+      recentConversationsCache = [];
+      conversationThreadCache.clear();
+      historySectionState = null;
       if (!user.emailVerified) {
         loginViewEl.style.display = 'block';
         verifyBanner.style.display = 'block';
@@ -158,6 +174,10 @@ document.addEventListener('DOMContentLoaded', function () {
       await initializeSelectionLayout();
     } else {
       currentUser = null;
+      currentConversationMessages = [];
+      recentConversationsCache = [];
+      conversationThreadCache.clear();
+      historySectionState = null;
       verifyBanner.style.display = 'none';
       loginViewEl.style.display = 'block';
       document.querySelector('.chat-wrapper').style.display = 'none';
@@ -235,6 +255,8 @@ document.addEventListener('DOMContentLoaded', function () {
        <strong>Elige el modo en el que quieres interactuar:</strong>`;
     selectionContainer.appendChild(welcome);
 
+    renderConversationHistorySection(selectionContainer);
+
     // Fila 2: tarjetas
     const grid = document.createElement('div');
     grid.className = 'mode-grid';
@@ -309,16 +331,310 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  // ===================== 8B) HISTORIAL DE CONVERSACIONES =====================
+  function renderConversationHistorySection(parentEl) {
+    if (!parentEl) return;
+    historySectionState = null;
+
+    const section = document.createElement('section');
+    section.className = 'history-section';
+
+    const header = document.createElement('header');
+    header.className = 'history-header';
+
+    const title = document.createElement('h2');
+    title.className = 'history-title';
+    title.textContent = 'Tus ultimas conversaciones';
+
+    const subtitle = document.createElement('p');
+    subtitle.className = 'history-subtitle';
+    subtitle.textContent = 'Pulsa sobre una para reanudarla.';
+
+    header.appendChild(title);
+    header.appendChild(subtitle);
+    section.appendChild(header);
+
+    const listEl = document.createElement('ul');
+    listEl.className = 'history-list';
+    section.appendChild(listEl);
+
+    const statusEl = document.createElement('p');
+    statusEl.className = 'history-status';
+    statusEl.textContent = 'Cargando conversaciones...';
+    section.appendChild(statusEl);
+
+    parentEl.appendChild(section);
+
+    historySectionState = { section, listEl, statusEl };
+
+    fetchRecentConversations(5)
+      .then((conversations) => {
+        recentConversationsCache = conversations;
+        updateHistoryList(conversations);
+      })
+      .catch((error) => {
+        console.error('No se pudo cargar el historial:', error);
+        setHistoryStatusMessage('No se pudo cargar el historial. Intentalo mas tarde.', true);
+      });
+  }
+
+  function setHistoryStatusMessage(message, isError = false) {
+    if (!historySectionState?.statusEl) return;
+    const { statusEl } = historySectionState;
+    if (!message) {
+      statusEl.textContent = '';
+      statusEl.style.display = 'none';
+      statusEl.classList.remove('is-error');
+      return;
+    }
+    statusEl.textContent = message;
+    statusEl.style.display = 'block';
+    statusEl.classList.toggle('is-error', !!isError);
+  }
+
+  function updateHistoryList(conversations) {
+    if (!historySectionState?.listEl) return;
+    const { listEl } = historySectionState;
+    listEl.innerHTML = '';
+
+    if (!conversations || !conversations.length) {
+      setHistoryStatusMessage('Todavia no tienes conversaciones previas.', false);
+      return;
+    }
+
+    setHistoryStatusMessage('', false);
+
+    conversations.forEach((conversation) => {
+      const item = document.createElement('li');
+      item.className = 'history-item';
+
+      const link = document.createElement('a');
+      link.href = '#';
+      link.className = 'history-link';
+      link.dataset.threadId = conversation.thread_id;
+      if (conversation.endpoint_source) {
+        link.dataset.endpointSource = conversation.endpoint_source;
+      }
+      link.textContent = conversation.summary || 'Conversacion previa';
+      link.addEventListener('click', handleHistoryItemClick);
+
+      item.appendChild(link);
+
+      const metaText = formatHistoryTimestamp(conversation.last_timestamp);
+      if (metaText) {
+        const meta = document.createElement('span');
+        meta.className = 'history-meta';
+        meta.textContent = metaText;
+        item.appendChild(meta);
+      }
+
+      listEl.appendChild(item);
+
+      const existing = conversationThreadCache.get(conversation.thread_id) || {};
+      const merged = { ...existing, ...conversation };
+      if (existing.messages && !conversation.messages) {
+        merged.messages = existing.messages;
+      }
+      conversationThreadCache.set(conversation.thread_id, merged);
+    });
+  }
+
+  function formatHistoryTimestamp(isoString) {
+    if (!isoString) return '';
+    const date = new Date(isoString);
+    if (Number.isNaN(date.getTime())) return '';
+    try {
+      return date.toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' });
+    } catch (_e) {
+      return date.toISOString().replace('T', ' ').split('.')[0];
+    }
+  }
+
+  async function fetchRecentConversations(limit = 5) {
+    await environmentReadyPromise;
+    const baseUrl = getOrchestratorBaseUrl();
+    if (!baseUrl) throw new Error('No se pudo determinar la URL del orquestador.');
+    const token = await getVerifiedIdTokenOrThrow();
+    const url = `${baseUrl}/chat_history/recents?limit=${encodeURIComponent(limit)}`;
+
+    const resp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    if (!resp.ok) {
+      let message = `Error ${resp.status}`;
+      try {
+        const payload = await resp.json();
+        if (payload?.error) message = payload.error;
+      } catch (_err) {
+        // noop
+      }
+      throw new Error(message);
+    }
+
+    const data = await resp.json();
+    return Array.isArray(data?.conversations) ? data.conversations : [];
+  }
+
+  async function fetchConversationThread(threadId) {
+    if (!threadId) throw new Error('threadId requerido');
+
+    const cached = conversationThreadCache.get(threadId);
+    if (cached?.messages && cached.messages.length) {
+      return cached;
+    }
+
+    await environmentReadyPromise;
+    const baseUrl = getOrchestratorBaseUrl();
+    if (!baseUrl) throw new Error('No se pudo determinar la URL del orquestador.');
+    const token = await getVerifiedIdTokenOrThrow();
+    const url = `${baseUrl}/chat_history/thread/${encodeURIComponent(threadId)}`;
+
+    const resp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    if (!resp.ok) {
+      let message = `Error ${resp.status}`;
+      try {
+        const payload = await resp.json();
+        if (payload?.error) message = payload.error;
+      } catch (_err) {
+        // noop
+      }
+      throw new Error(message);
+    }
+
+    const data = await resp.json();
+    if (!data || typeof data !== 'object') {
+      throw new Error('Respuesta invalida al recuperar la conversacion.');
+    }
+    if (!Array.isArray(data.messages)) {
+      data.messages = [];
+    }
+
+    const existing = conversationThreadCache.get(threadId) || {};
+    conversationThreadCache.set(threadId, { ...existing, ...data });
+
+    return data;
+  }
+
+  function determineModeFromEndpoint(endpointSource) {
+    if (!endpointSource) return currentChatMode || 'advisor';
+    if (endpointSource.includes('auditor')) return 'auditor';
+    if (endpointSource.includes('assistant')) return 'advisor';
+    return currentChatMode || 'advisor';
+  }
+
+  function resumeConversationFromHistory(conversationData) {
+    if (!conversationData) return;
+
+    currentChatThreadId = conversationData.thread_id || null;
+    currentChatMode = determineModeFromEndpoint(conversationData.endpoint_source);
+    currentConversationMessages = Array.isArray(conversationData.messages)
+      ? conversationData.messages.slice()
+      : [];
+
+    document.querySelector('.selection-container')?.remove();
+
+    chatMessagesEl.style.display = 'flex';
+    sendButtonEl.disabled = false;
+    attachFileButtonEl.disabled = false;
+    userInputEl.value = '';
+    adjustUserInputHeight();
+
+    const messagesToShow = currentConversationMessages.slice(-5);
+    chatMessagesEl.innerHTML = '';
+
+    if (!messagesToShow.length) {
+      addSystemMessageToChat('No encontramos mensajes previos en esta conversacion.');
+    } else {
+      messagesToShow.forEach((msg) => {
+        if (msg.role === 'assistant') {
+          addAssistantMessageWithCitations(msg.text, []);
+        } else if (msg.role === 'user') {
+          addUserMessageToChat(msg.text);
+        } else if (msg.role === 'system') {
+          addSystemMessageToChat(msg.text);
+        }
+      });
+    }
+
+    if (currentChatMode === 'auditor') {
+      userInputEl.placeholder = 'Continua con la conversacion de auditor...';
+    } else {
+      userInputEl.placeholder = 'Escribe tu mensaje para continuar...';
+    }
+
+    userInputEl.focus();
+    syncConversationCache(currentChatThreadId, conversationData.endpoint_source);
+    setHistoryStatusMessage('', false);
+  }
+
+  function syncConversationCache(threadId, endpointSource) {
+    if (!threadId) return;
+    const existing = conversationThreadCache.get(threadId) || {};
+    const payload = {
+      ...existing,
+      thread_id: threadId,
+      endpoint_source: endpointSource || existing.endpoint_source || getEndpointSourceForMode(currentChatMode),
+      messages: currentConversationMessages.slice(),
+      last_timestamp: new Date().toISOString(),
+    };
+    conversationThreadCache.set(threadId, payload);
+  }
+
+  function getEndpointSourceForMode(mode) {
+    if (mode === 'auditor') return '/chat_auditor';
+    if (mode === 'advisor') return '/chat_assistant';
+    return undefined;
+  }
+
+  async function handleHistoryItemClick(event) {
+    event.preventDefault();
+    const link = event.currentTarget;
+    if (!link || link.dataset.loading === '1') return;
+
+    const threadId = link.dataset.threadId;
+    if (!threadId) return;
+
+    link.dataset.loading = '1';
+    link.classList.add('is-loading');
+    setHistoryStatusMessage('Cargando conversacion...', false);
+
+    try {
+      const conversation = await fetchConversationThread(threadId);
+      resumeConversationFromHistory(conversation);
+    } catch (error) {
+      console.error('No se pudo abrir la conversacion seleccionada:', error);
+      setHistoryStatusMessage('No se pudo abrir la conversacion seleccionada.', true);
+    } finally {
+      link.dataset.loading = '';
+      link.classList.remove('is-loading');
+    }
+  }
+
   function handleModeSelectionClick(e) {
     currentChatMode = e.target.dataset.mode;
     document.querySelector('.selection-container')?.remove();
 
     // Mostrar timeline y habilitar input (Fila 3)
     chatMessagesEl.style.display = 'flex';
+    chatMessagesEl.innerHTML = '';
     sendButtonEl.disabled = false;
     attachFileButtonEl.disabled = false;
     userInputEl.value = ''; userInputEl.focus(); adjustUserInputHeight();
     currentChatThreadId = null;
+    currentConversationMessages = [];
+    setHistoryStatusMessage('', false);
 
     if (currentChatMode === 'auditor') {
       addAssistantMessageInternal("Has seleccionado el modo <strong>AUDITOR</strong>.<br>Comienza por contarme: nombre de la empresa, sector, tamaño y sedes.");
@@ -352,6 +668,12 @@ document.addEventListener('DOMContentLoaded', function () {
       return;
     }
 
+    currentConversationMessages.push({
+      role: 'user',
+      text: messageText,
+      timestamp: new Date().toISOString(),
+    });
+
     addUserMessageToChat(messageText);
     userInputEl.value = ''; adjustUserInputHeight();
     showTypingIndicatorToChat();
@@ -375,9 +697,15 @@ document.addEventListener('DOMContentLoaded', function () {
       if (data.response) {
         const cleaned = data.response.replace(/【.*?†source】/g,'').trim();
         addAssistantMessageWithCitations(cleaned, data.citations || []);
+        currentConversationMessages.push({
+          role: 'assistant',
+          text: cleaned,
+          timestamp: new Date().toISOString(),
+        });
       } else if (data.error) {
         addSystemMessageToChat(`Error del asistente: ${data.error}`);
       }
+      syncConversationCache(currentChatThreadId, getEndpointSourceForMode(currentChatMode));
     } catch (e) {
       removeTypingIndicatorFromChat();
       addSystemMessageToChat("No se pudo conectar con el servidor.");
