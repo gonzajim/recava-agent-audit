@@ -81,6 +81,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let recentConversationsCache = [];
   const conversationThreadCache = new Map();
   let historySectionState = null;
+  let isRestoringHistoryPlayback = false;
 
   // ===================== 3) HELPERS VERIFICACIÓN =====================
   async function sendVerificationIfNeeded(user) {
@@ -557,16 +558,23 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!messagesToShow.length) {
       addSystemMessageToChat('No encontramos mensajes previos en esta conversacion.');
     } else {
-      messagesToShow.forEach((msg) => {
-        if (msg.role === 'assistant') {
-          addAssistantMessageWithCitations(msg.text, []);
-        } else if (msg.role === 'user') {
-          addUserMessageToChat(msg.text);
-        } else if (msg.role === 'system') {
-          addSystemMessageToChat(msg.text);
-        }
-      });
+      isRestoringHistoryPlayback = true;
+      try {
+        messagesToShow.forEach((msg) => {
+          if (msg.role === 'assistant') {
+            addAssistantMessageWithCitations(msg.text, []);
+          } else if (msg.role === 'user') {
+            addUserMessageToChat(msg.text);
+          } else if (msg.role === 'system') {
+            addSystemMessageToChat(msg.text);
+          }
+        });
+      } finally {
+        isRestoringHistoryPlayback = false;
+      }
     }
+
+    scrollChatToBottom({ behavior: 'auto' });
 
     if (currentChatMode === 'auditor') {
       userInputEl.placeholder = 'Continua con la conversacion de auditor...';
@@ -731,15 +739,15 @@ document.addEventListener('DOMContentLoaded', function () {
       wrap.appendChild(cont);
     }
     chatMessagesEl.appendChild(wrap);
-    chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+    scrollChatToBottom();
   }
   function addMessageToChatDOM(html, cls){
     const el = document.createElement('div'); el.classList.add('message', cls); el.innerHTML = html;
-    chatMessagesEl.appendChild(el); chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+    chatMessagesEl.appendChild(el); scrollChatToBottom();
   }
   function addUserMessageToChat(t){ const s=t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); addMessageToChatDOM(s,'user-message'); }
   function addSystemMessageToChat(t){ const s=t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); addMessageToChatDOM(s,'system-message'); }
-  function addAssistantMessageInternal(html){ const el=document.createElement('div'); el.classList.add('message','assistant-message'); el.innerHTML=`<div class="main-assistant-text">${html}</div>`; chatMessagesEl.appendChild(el); chatMessagesEl.scrollTop=chatMessagesEl.scrollHeight; }
+  function addAssistantMessageInternal(html){ const el=document.createElement('div'); el.classList.add('message','assistant-message'); el.innerHTML=`<div class="main-assistant-text">${html}</div>`; chatMessagesEl.appendChild(el); scrollChatToBottom(); }
   function escapeHtml(u){ if(!u) return ''; return u.toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;"); }
   function adjustUserInputHeight(){
     userInputEl.style.height='auto';
@@ -756,9 +764,33 @@ document.addEventListener('DOMContentLoaded', function () {
     typingIndicatorDiv.classList.add('message','assistant-message','typing-indicator');
     typingIndicatorDiv.textContent="Generando una respuesta...";
     chatMessagesEl.appendChild(typingIndicatorDiv);
-    chatMessagesEl.scrollTop=chatMessagesEl.scrollHeight;
+    scrollChatToBottom({ behavior: 'smooth' });
   }
   function removeTypingIndicatorFromChat(){ if(typingIndicatorDiv){ typingIndicatorDiv.remove(); typingIndicatorDiv=null; } }
+
+  function scrollChatToBottom(options){
+    if (!chatMessagesEl) return;
+    const requestedBehavior = (options && options.behavior) ? options.behavior : 'smooth';
+    const effectiveBehavior = isRestoringHistoryPlayback ? 'auto' : requestedBehavior;
+
+    const performScroll = () => {
+      if (typeof chatMessagesEl.scrollTo === 'function') {
+        try {
+          chatMessagesEl.scrollTo({ top: chatMessagesEl.scrollHeight, behavior: effectiveBehavior });
+          return;
+        } catch (_e) {
+          // fallback below
+        }
+      }
+      chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+    };
+
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(performScroll);
+    } else {
+      performScroll();
+    }
+  }
 
   attachFileButtonEl?.addEventListener('click', ()=> addSystemMessageToChat("La funcionalidad de adjuntar archivos se gestiona automáticamente por el asistente."));
   sendButtonEl?.addEventListener('click', handleSendMessageToServer);
