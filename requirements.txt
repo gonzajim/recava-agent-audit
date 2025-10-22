@@ -3,6 +3,7 @@
 # --- Framework Web y Servidor ---
 Flask
 Flask-Cors
+Flask-Limiter
 gunicorn
 
 # --- Cliente de OpenAI ---
