@@ -54,18 +54,36 @@ firestore_db = firestore.client()
 # =============================================================================
 # 1) CORS y Rate Limiting
 # =============================================================================
-# Importante para navegadores: habilitar preflight (OPTIONS) con los headers/métodos que usas en el front.
-# Si quieres lista blanca por env var, define CORS_ORIGINS="https://recava-auditor-dev.web.app,https://recava-auditor.web.app"
-_allowed_origins = os.getenv("CORS_ORIGINS", "*").split(",")
+# Orígenes permitidos: Lee desde variable de entorno o usa defaults seguros
+_allowed_origins_str = os.getenv("CORS_ORIGINS", "https://recava-auditor-dev.web.app,https://recava-auditor.web.app,http://localhost:8000")
+_allowed_origins = [origin.strip() for origin in _allowed_origins_str.split(",") if origin.strip()]
+
+# Si no se define nada específico, permitir solo los dominios de Firebase y localhost
+if not _allowed_origins or "*" in _allowed_origins:
+    _allowed_origins = [
+        "https://recava-auditor-dev.web.app", # Tu entorno de dev
+        "https://recava-auditor.web.app",   # Tu (futuro) entorno de prod
+        "http://localhost:8000"           # Para pruebas locales
+    ]
+    logger.warning(f"CORS_ORIGINS no definida o '*', usando defaults seguros: {_allowed_origins}")
+
 CORS(
     app,
-    resources={r"/*": {"origins": _allowed_origins}},
-    supports_credentials=False,  # usamos Authorization header, no cookies
+    # Permite solo los orígenes especificados
+    origins=_allowed_origins,
+    # Permite credenciales si las usaras (aunque ahora usas Authorization header)
+    supports_credentials=True,
+    # Métodos y Headers necesarios para tu app
     methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
-    expose_headers=["X-Request-Id"]  # útil para trazabilidad en el front
+    # Headers que el frontend podrá leer
+    expose_headers=["X-Request-Id"],
+    # Tiempo que el navegador puede cachear la respuesta OPTIONS (preflight)
+    max_age=86400 # 1 día
 )
+logger.info(f"CORS configured for origins: {_allowed_origins}")
 
+# Rate Limiting (sin cambios)
 limiter = Limiter(get_remote_address, app=app, default_limits=["120/minute"])
 
 
