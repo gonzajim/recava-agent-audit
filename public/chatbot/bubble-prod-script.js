@@ -4,7 +4,8 @@ document.addEventListener('DOMContentLoaded', function () {
     apiKey: "AIzaSyAAlSxno1oBOtyhh7ntS2mv8rkAnWeAzmM",
     authDomain: "recava-auditor-dev.firebaseapp.com",
     projectId: "recava-auditor-dev",
-    storageBucket: "recava-auditor-dev.firebasestorage.app",
+    // FIX: bucket estándar de Firebase Storage
+    storageBucket: "recava-auditor-dev.appspot.com",
     messagingSenderId: "370417116045",
     appId: "1:370417116045:web:41c77969d5d880382d93c4",
     measurementId: "G-2J8TTR4SD2"
@@ -55,6 +56,27 @@ document.addEventListener('DOMContentLoaded', function () {
     return ref.replace(/\/$/, "");
   }
 
+  // ===================== 1B) UTILS RED/RESPUESTA =====================
+  async function parseApiResponse(resp) {
+    const payload = await resp.json().catch(() => ({}));
+    if (payload && typeof payload === 'object') {
+      if (payload.ok === true && payload.data !== undefined) return payload.data;
+      if (payload.ok === false) {
+        const msg = payload?.error?.message || payload?.error || `HTTP ${resp.status}`;
+        throw new Error(msg);
+      }
+    }
+    return payload; // retrocompatibilidad con APIs que devuelven objeto directo
+  }
+  function withTimeout(ms = 20000) {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), ms);
+    return { signal: controller.signal, cancel: () => clearTimeout(t) };
+  }
+  function idempotencyKey() {
+    return (crypto?.randomUUID && crypto.randomUUID()) || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
   // ===================== 2) SELECTORES =====================
   const loginViewEl = document.getElementById('login-view') || document.getElementById('login-container');
   const chatWrapperEl = document.querySelector('.chat-wrapper');
@@ -73,6 +95,9 @@ document.addEventListener('DOMContentLoaded', function () {
   const userInputEl = document.getElementById('user-input');
   const sendButtonEl = document.getElementById('send-button');
   const attachFileButtonEl = document.getElementById('attach-file-button');
+
+  // Accesibilidad log
+  if (chatMessagesEl) { chatMessagesEl.setAttribute('aria-live','polite'); chatMessagesEl.setAttribute('role','log'); }
 
   const AUDIT_BLOCKS_DEFINITION = [
     { id: 'block_1', label: '1. Contexto y Alcance' },
@@ -113,7 +138,7 @@ document.addEventListener('DOMContentLoaded', function () {
         <h3 class="auditor-progress__title">Progreso de auditoria</h3>
         <span class="auditor-progress__percent">0%</span>
       </header>
-      <div class="auditor-progress__bar">
+      <div class="auditor-progress__bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
         <div class="auditor-progress__bar-fill" style="width:0%;"></div>
       </div>
       <div class="auditor-progress__summary hidden">
@@ -335,7 +360,7 @@ document.addEventListener('DOMContentLoaded', function () {
           </p>
         </div>
         <footer class="mode-card__footer">
-          <button class="mode-button-chat" data-mode="advisor" title="Seleccionar modo asesor">
+          <button class="mode-button-chat" data-mode="advisor" title="Seleccionar modo asesor" role="button">
             Seleccionar Modo Asesor
           </button>
         </footer>
@@ -371,7 +396,7 @@ document.addEventListener('DOMContentLoaded', function () {
           </div>
         </div>
         <footer class="mode-card__footer">
-          <button class="mode-button-chat" data-mode="auditor" title="Seleccionar modo auditor">
+          <button class="mode-button-chat" data-mode="auditor" title="Seleccionar modo auditor" role="button">
             Seleccionar Modo Auditor
           </button>
         </footer>
@@ -517,26 +542,27 @@ document.addEventListener('DOMContentLoaded', function () {
     const token = await getVerifiedIdTokenOrThrow();
     const url = `${baseUrl}/chat_history/recents?limit=${encodeURIComponent(limit)}`;
 
+    const { signal, cancel } = withTimeout(20000);
     const resp = await fetch(url, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
         'Authorization': `Bearer ${token}`,
+        'Idempotency-Key': idempotencyKey()
       },
-    });
+      signal
+    }).finally(cancel);
 
     if (!resp.ok) {
       let message = `Error ${resp.status}`;
       try {
         const payload = await resp.json();
         if (payload?.error) message = payload.error;
-      } catch (_err) {
-        // noop
-      }
+      } catch (_err) { /* noop */ }
       throw new Error(message);
     }
 
-    const data = await resp.json();
+    const data = await parseApiResponse(resp);
     return Array.isArray(data?.conversations) ? data.conversations : [];
   }
 
@@ -554,26 +580,27 @@ document.addEventListener('DOMContentLoaded', function () {
     const token = await getVerifiedIdTokenOrThrow();
     const url = `${baseUrl}/chat_history/thread/${encodeURIComponent(threadId)}`;
 
+    const { signal, cancel } = withTimeout(20000);
     const resp = await fetch(url, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
         'Authorization': `Bearer ${token}`,
+        'Idempotency-Key': idempotencyKey()
       },
-    });
+      signal
+    }).finally(cancel);
 
     if (!resp.ok) {
       let message = `Error ${resp.status}`;
       try {
         const payload = await resp.json();
         if (payload?.error) message = payload.error;
-      } catch (_err) {
-        // noop
-      }
+      } catch (_err) { /* noop */ }
       throw new Error(message);
     }
 
-    const data = await resp.json();
+    const data = await parseApiResponse(resp);
     if (!data || typeof data !== 'object') {
       throw new Error('Respuesta invalida al recuperar la conversacion.');
     }
@@ -592,26 +619,28 @@ document.addEventListener('DOMContentLoaded', function () {
     const baseUrl = getOrchestratorBaseUrl();
     if (!baseUrl) throw new Error('No se pudo determinar la URL del orquestador.');
     const token = await getVerifiedIdTokenOrThrow();
+
+    const { signal, cancel } = withTimeout(20000);
     const resp = await fetch(`${baseUrl}/audit_progress/${encodeURIComponent(threadId)}`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
         'Authorization': `Bearer ${token}`,
+        'Idempotency-Key': idempotencyKey()
       },
-    });
+      signal
+    }).finally(cancel);
 
     if (!resp.ok) {
       let message = `Error ${resp.status}`;
       try {
         const payload = await resp.json();
         if (payload?.error) message = payload.error;
-      } catch (_err) {
-        // noop
-      }
+      } catch (_err) { /* noop */ }
       throw new Error(message);
     }
 
-    return await resp.json();
+    return await parseApiResponse(resp);
   }
 
   async function updateAuditProgressBlockStatus(threadId, blockId, status, summary) {
@@ -619,32 +648,34 @@ document.addEventListener('DOMContentLoaded', function () {
     const baseUrl = getOrchestratorBaseUrl();
     if (!baseUrl) throw new Error('No se pudo determinar la URL del orquestador.');
     const token = await getVerifiedIdTokenOrThrow();
+
+    const { signal, cancel } = withTimeout(20000);
     const resp = await fetch(`${baseUrl}/audit_progress/${encodeURIComponent(threadId)}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'Authorization': `Bearer ${token}`,
+        'Idempotency-Key': idempotencyKey()
       },
+      signal,
       body: JSON.stringify({
         block_id: blockId,
         status,
         summary,
       }),
-    });
+    }).finally(cancel);
 
     if (!resp.ok) {
       let message = `Error ${resp.status}`;
       try {
         const payload = await resp.json();
         if (payload?.error) message = payload.error;
-      } catch (_err) {
-        // noop
-      }
+      } catch (_err) { /* noop */ }
       throw new Error(message);
     }
 
-    return await resp.json();
+    return await parseApiResponse(resp);
   }
 
   function determineModeFromEndpoint(endpointSource) {
@@ -696,10 +727,11 @@ document.addEventListener('DOMContentLoaded', function () {
     const incomingBlocks = new Map(state.blocks.map(block => [block.id, block]));
     const normalizedBlocks = AUDIT_BLOCKS_DEFINITION.map((definition) => {
       const info = incomingBlocks.get(definition.id) || {};
+      const st = (info.status === 'completed' || info.status === 'in_progress') ? info.status : 'pending';
       return {
         id: definition.id,
         label: info.label || definition.label,
-        status: info.status === 'completed' ? 'completed' : 'pending',
+        status: st,
         summary: info.summary || null,
         completed_at: info.completed_at || null,
         updated_at: info.updated_at || null,
@@ -708,13 +740,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const completed = normalizedBlocks.filter(block => block.status === 'completed').length;
     const total = normalizedBlocks.length;
-    let activeBlockId = state.active_block_id;
 
-    if (!activeBlockId || !normalizedBlocks.some(block => block.id === activeBlockId)) {
-      activeBlockId = normalizedBlocks.find(block => block.status !== 'completed')?.id
-        || normalizedBlocks[normalizedBlocks.length - 1]?.id
-        || null;
-    }
+    let activeBlockId = state.active_block_id
+      || (normalizedBlocks.find(b => b.status === 'in_progress')?.id)
+      || (normalizedBlocks.find(b => b.status !== 'completed')?.id)
+      || (normalizedBlocks[normalizedBlocks.length - 1]?.id);
 
     const percent = typeof state.percent === 'number'
       ? Math.max(0, Math.min(100, Math.round(state.percent)))
@@ -755,6 +785,8 @@ document.addEventListener('DOMContentLoaded', function () {
     if (auditorProgressBarFillEl) {
       auditorProgressBarFillEl.style.width = `${percent}%`;
       auditorProgressBarFillEl.setAttribute('aria-valuenow', String(percent));
+      const bar = auditorProgressBarFillEl.parentElement;
+      if (bar) bar.setAttribute('aria-valuenow', String(percent));
     }
 
     renderAuditProgressList(state);
@@ -775,12 +807,13 @@ document.addEventListener('DOMContentLoaded', function () {
     const activeBlockId = state.active_block_id;
 
     blocks.forEach((block, idx) => {
+      const isActive = block.id === activeBlockId;
+      const statusClass = block.status === 'completed' ? 'completed' : (isActive ? 'active' : 'pending');
       const li = document.createElement('li');
-      const statusClass = block.status === 'completed' ? 'completed' : (block.id === activeBlockId ? 'active' : 'pending');
       li.className = `auditor-progress__item auditor-progress__item--${statusClass}`;
       li.dataset.blockId = block.id;
 
-      const statusLabel = formatAuditBlockStatus(block.status, block.id === activeBlockId);
+      const statusLabel = formatAuditBlockStatus(block.status, isActive);
 
       li.innerHTML = `
         <div class="auditor-progress__item-info">
@@ -794,18 +827,22 @@ document.addEventListener('DOMContentLoaded', function () {
           <button
             class="auditor-progress__action"
             type="button"
+            role="button"
+            aria-label="Ver informe del bloque"
             data-action="view-report"
             data-block-id="${block.id}"
-            ${canViewAuditReport(block, state) ? '' : 'disabled'}
+            ${canViewAuditReport(block, state) ? '' : 'disabled aria-disabled="true"'}
           >
             Ver informe
           </button>
           <button
             class="auditor-progress__action auditor-progress__action--complete"
             type="button"
+            role="button"
+            aria-label="Marcar bloque como completado"
             data-action="complete-block"
             data-block-id="${block.id}"
-            ${canCompleteAuditBlock(block, state) ? '' : 'disabled'}
+            ${canCompleteAuditBlock(block, state) ? '' : 'disabled aria-disabled="true"'}
           >
             Marcar completado
           </button>
@@ -841,7 +878,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function formatAuditBlockStatus(status, isActive) {
     if (status === 'completed') return 'Completado';
-    if (isActive) return 'En progreso';
+    if (status === 'in_progress' || isActive) return 'En progreso';
     return 'Pendiente';
   }
 
@@ -854,7 +891,8 @@ document.addEventListener('DOMContentLoaded', function () {
   function canCompleteAuditBlock(block, state) {
     if (!block) return false;
     if (!currentUser || currentChatMode !== 'auditor') return false;
-    return block.status !== 'completed' && block.id === state.active_block_id;
+    const isActive = block.id === state.active_block_id;
+    return isActive && block.status !== 'completed';
   }
 
   function handleAuditProgressPanelClick(event) {
@@ -941,6 +979,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (currentChatMode === 'auditor') {
       setAuditProgressState(buildDefaultAuditProgressState());
       showAuditorProgressPanel();
+      if (currentChatThreadId) refreshAuditProgress(currentChatThreadId);
     } else {
       hideAuditorProgressPanel();
     }
@@ -1095,18 +1134,26 @@ document.addEventListener('DOMContentLoaded', function () {
     const endpointUrl = currentChatMode === 'auditor' ? currentEndpoints.auditor : currentEndpoints.advisor;
 
     try {
+      const { signal, cancel } = withTimeout(30000);
       const resp = await fetch(endpointUrl, {
         method:'POST',
-        headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${token}` },
+        headers:{
+          'Content-Type':'application/json',
+          'Authorization':`Bearer ${token}`,
+          'Idempotency-Key': idempotencyKey()
+        },
+        signal,
         body: JSON.stringify({ message: messageText, thread_id: currentChatThreadId })
       });
+      cancel();
       removeTypingIndicatorFromChat();
       if (!resp.ok) {
         const err = await resp.json().catch(()=>({error:"Error de red", details:`Status ${resp.status}`}));
         addSystemMessageToChat(`Error del servidor: ${err.error || resp.statusText}.`);
+        userInputEl.focus();
         return;
       }
-      const data = await resp.json();
+      const data = await parseApiResponse(resp);
       if (data.thread_id) currentChatThreadId = data.thread_id;
       if (data.response) {
         const cleaned = data.response.replace(/【.*?†source】/g,'').trim();
@@ -1121,12 +1168,13 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       syncConversationCache(currentChatThreadId, getEndpointSourceForMode(currentChatMode));
       if (currentChatMode === 'auditor' && currentChatThreadId) {
-        refreshAuditProgress(currentChatThreadId);
+        await refreshAuditProgress(currentChatThreadId);
       }
     } catch (e) {
       removeTypingIndicatorFromChat();
       addSystemMessageToChat("No se pudo conectar con el servidor.");
       console.error("fetch error:", e);
+      userInputEl.focus();
     }
   }
 
@@ -1158,13 +1206,15 @@ document.addEventListener('DOMContentLoaded', function () {
   function addSystemMessageToChat(t){ const s=t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); addMessageToChatDOM(s,'system-message'); }
   function addAssistantMessageInternal(html){ const el=document.createElement('div'); el.classList.add('message','assistant-message'); el.innerHTML=`<div class="main-assistant-text">${html}</div>`; chatMessagesEl.appendChild(el); scrollChatToBottom(); }
   function escapeHtml(u){ if(!u) return ''; return u.toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;"); }
+
   function adjustUserInputHeight(){
     userInputEl.style.height='auto';
     const max=120, sh=userInputEl.scrollHeight;
     userInputEl.style.height=(sh>max?max:sh)+'px';
     userInputEl.style.overflowY=(sh>max?'auto':'hidden');
   }
-  userInputEl?.addEventListener('input', adjustUserInputHeight); adjustUserInputHeight();
+  function debounce(fn, ms=100){ let h; return (...a)=>{ clearTimeout(h); h=setTimeout(()=>fn(...a),ms); }; }
+  userInputEl?.addEventListener('input', debounce(adjustUserInputHeight, 60)); adjustUserInputHeight();
 
   let typingIndicatorDiv=null;
   function showTypingIndicatorToChat(){

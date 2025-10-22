@@ -54,7 +54,18 @@ firestore_db = firestore.client()
 # =============================================================================
 # 1) CORS y Rate Limiting
 # =============================================================================
-CORS(app, resources={r"/*": {"origins": os.getenv("CORS_ORIGINS", "*").split(",")}})
+# Importante para navegadores: habilitar preflight (OPTIONS) con los headers/métodos que usas en el front.
+# Si quieres lista blanca por env var, define CORS_ORIGINS="https://recava-auditor-dev.web.app,https://recava-auditor.web.app"
+_allowed_origins = os.getenv("CORS_ORIGINS", "*").split(",")
+CORS(
+    app,
+    resources={r"/*": {"origins": _allowed_origins}},
+    supports_credentials=False,  # usamos Authorization header, no cookies
+    methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
+    expose_headers=["X-Request-Id"]  # útil para trazabilidad en el front
+)
+
 limiter = Limiter(get_remote_address, app=app, default_limits=["120/minute"])
 
 
