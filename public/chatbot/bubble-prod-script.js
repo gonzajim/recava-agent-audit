@@ -89,6 +89,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const chatBubbleEl = document.getElementById('chat-bubble');
   const chatWidgetContainerEl = document.getElementById('chat-widget-container');
   const chatCloseButtonEl = document.getElementById('chat-close-button');
+  const chatHomeButtonEl = document.getElementById('chat-home-button');
 
   const chatMessagesEl = document.getElementById('chat-messages');
   const inputAreaWrapperEl = document.getElementById('input-area-wrapper');
@@ -991,6 +992,7 @@ document.addEventListener('DOMContentLoaded', function () {
     attachFileButtonEl.disabled = false;
     userInputEl.value = '';
     adjustUserInputHeight();
+    inputAreaWrapperEl.style.display = 'block';
 
     const messagesToShow = currentConversationMessages.slice(-5);
     chatMessagesEl.innerHTML = '';
@@ -1082,6 +1084,7 @@ document.addEventListener('DOMContentLoaded', function () {
     userInputEl.value = ''; userInputEl.focus(); adjustUserInputHeight();
     currentChatThreadId = null;
     currentConversationMessages = [];
+    inputAreaWrapperEl.style.display = 'block';
     if (currentChatMode === 'auditor') {
       setAuditProgressState(buildDefaultAuditProgressState());
       showAuditorProgressPanel();
@@ -1256,4 +1259,23 @@ document.addEventListener('DOMContentLoaded', function () {
   userInputEl?.addEventListener('keypress', (e)=> {
     if (e.key === 'Enter' && !e.shiftKey && !sendButtonEl.disabled) { e.preventDefault(); handleSendMessageToServer(); }
   });
+  chatHomeButtonEl?.addEventListener('click', handleNavigateHomeClick);
+
+  function handleNavigateHomeClick() {
+    if (!currentUser) return;
+    removeTypingIndicatorFromChat();
+    currentChatMode = null;
+    currentChatThreadId = null;
+    currentConversationMessages = [];
+    hideAuditorProgressPanel();
+    chatMessagesEl.innerHTML = '';
+    chatMessagesEl.style.display = 'none';
+    inputAreaWrapperEl.style.display = 'none';
+    sendButtonEl.disabled = true;
+    attachFileButtonEl.disabled = true;
+    userInputEl.value = '';
+    userInputEl.placeholder = 'Selecciona un modo para comenzar...';
+    setHistoryStatusMessage('', false);
+    initializeSelectionLayout();
+  }
 });

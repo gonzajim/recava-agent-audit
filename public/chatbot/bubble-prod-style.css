@@ -77,6 +77,32 @@ body {
   display: flex; justify-content: space-between; align-items: center;
 }
 .chat-header h1 { margin: 0; font-size: 1.1rem; font-weight: 500; }
+.chat-header__actions {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+.chat-header__actions button {
+  border: none;
+  border-radius: 999px;
+  padding: .45rem 1rem;
+  font-size: .85rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: rgba(255,255,255,.15);
+  color: var(--texto-claro);
+  transition: background-color .2s ease, transform .1s ease;
+}
+.chat-header__actions button:hover {
+  background: rgba(255,255,255,.25);
+  transform: translateY(-1px);
+}
+#chat-home-button {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+}
+
 
 #chat-close-button {
   background: none; border: none; color: var(--texto-claro);
