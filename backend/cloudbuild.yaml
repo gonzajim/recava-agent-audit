@@ -1,0 +1,39 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      [
+        'build',
+        '-t',
+        '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/recavai-advisor:$_TAG',
+        '.',
+        '-f',
+        'Dockerfile',
+      ]
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      [
+        'push',
+        '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/recavai-advisor:$_TAG',
+      ]
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      [
+        'run',
+        'deploy',
+        'recavai-advisor',
+        '--image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/recavai-advisor:$_TAG',
+        '--region=${_REGION}',
+        '--platform=managed',
+        '--port=8080',
+        '--memory=2Gi',
+        '--concurrency=20',
+        '--timeout=240',
+        '--allow-unauthenticated',
+      ]
+substitutions:
+  _REGION: europe-west1
+  _REPO: app-images
+  _TAG: v1
+images:
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/recavai-advisor:$_TAG'
