@@ -3,14 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
 from pydantic import BaseModel
 
 # NOTE: Replace these imports with the concrete implementations from your agent SDK.
 from agents import Agent, Runner, RunConfig, TResponseInputItem, trace  # type: ignore
 
+from .chat_generators import (
+    ChatAdapter,
+    ChatGenerationContext,
+    ChatGenerationError,
+)
 from .guardrails_utils import (
     ctx,
     guardrails_config,
@@ -22,6 +29,7 @@ from .guardrails_utils import (
 )
 
 PARALLEL_TIMEOUT_SECS = 45
+logger = logging.getLogger(__name__)
 
 
 async def _run_agent_with_timeout(
@@ -183,6 +191,8 @@ async def run_workflow(
     a4_referencias: "Agent",
     a5_temporal: "Agent",
     agent: "Agent",
+    *,
+    chat_adapter: ChatAdapter,
 ) -> Dict[str, Any]:
     with trace("RecavAI-Agentic-Assistant"):
         workflow = workflow_input.model_dump()
@@ -210,15 +220,45 @@ async def run_workflow(
                 "citas": [],
             }
 
-        # asistente inicial
-        init_temp = await Runner.run(
-            asistente_inicial,
-            input=[*conversation_history],
+        generation_context = ChatGenerationContext(
+            user_question=guardrails_checked,
+            conversation_history=[*conversation_history],
             run_config=_mk_run_cfg(),
+            thread_id=str(uuid4()),
         )
-        conversation_history.extend([item.to_input_item() for item in init_temp.new_items])
-        initial_answer_text = init_temp.final_output_as(str)
+
+        try:
+            initial_generation = await chat_adapter.generate(generation_context)
+        except ChatGenerationError as exc:
+            logger.error("Initial assistant generation failed: %s", exc, exc_info=True)
+            raise
+
+        for item in initial_generation.new_items or []:
+            try:
+                conversation_history.append(item.to_input_item())
+            except AttributeError:
+                logger.debug("Skipping adapter item without to_input_item: %s", item)
+
+        if not initial_generation.new_items:
+            conversation_history.append(
+                {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": initial_generation.text,
+                        }
+                    ],
+                }
+            )
+
+        initial_answer_text = initial_generation.text
         asistente_inicial_result = {"output_text": initial_answer_text}
+        initial_citations = [
+            _normalize_citation(ci)
+            for ci in initial_generation.citations
+            if isinstance(ci, dict)
+        ]
 
         eval_tasks = [
             _run_agent_with_timeout(a1_estructura, conversation_history, _mk_run_cfg()),
@@ -249,6 +289,7 @@ async def run_workflow(
         ]
 
         available_citations = _collect_available_citations(evals, a4_res)
+        available_citations = _dedupe_citations([*available_citations, *initial_citations])
 
         synthesis_prompt = _build_final_synthesis_prompt(
             user_question=guardrails_checked,
@@ -268,4 +309,3 @@ async def run_workflow(
             "respuesta_final": agent_temp.final_output_as(str),
             "citas": available_citations,
         }
-

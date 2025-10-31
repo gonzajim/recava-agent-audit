@@ -29,7 +29,11 @@ steps:
         '--memory=2Gi',
         '--concurrency=20',
         '--timeout=240',
+        '--vpc-connector=projects/$PROJECT_ID/locations/${_REGION}/connectors/recava-advisor-conn',
+        '--egress-settings=all',
+        '--set-secrets=MCP_API_KEY=projects/$PROJECT_ID/secrets/mcp-api-key/versions/latest',
         '--allow-unauthenticated',
+        '--set-env-vars=MCP_SERVER_URL=http://10.10.0.5:8080/generate_answer,MCP_TIMEOUT_SECS=20,CHAT_GENERATOR=mcp',
       ]
 substitutions:
   _REGION: europe-west1
