@@ -31,13 +31,22 @@ steps:
         '--timeout=240',
         '--vpc-connector=projects/$PROJECT_ID/locations/${_REGION}/connectors/recava-advisor-conn',
         '--egress-settings=all',
-        '--set-secrets=MCP_API_KEY=projects/$PROJECT_ID/secrets/mcp-api-key/versions/latest',
         '--allow-unauthenticated',
-        '--set-env-vars=MCP_SERVER_URL=http://10.10.0.5:8080/generate_answer,MCP_TIMEOUT_SECS=20,CHAT_GENERATOR=mcp',
+        '--set-env-vars=ADVISOR_GENERATION_MODE=${_ADVISOR_GENERATION_MODE},OPENAI_RESPONSES_MODEL=${_OPENAI_RESPONSES_MODEL},OPENAI_RESPONSES_TEMPERATURE=${_OPENAI_RESPONSES_TEMPERATURE}',
+        '--set-env-vars=OPENAI_ASSISTANT_ID_ASESOR=${_OPENAI_ASSISTANT_ID_ASESOR},OPENAI_ASSISTANT_ID_ROUTER=${_OPENAI_ASSISTANT_ID_ROUTER},OPENAI_ASSISTANT_ID_COMPOSER=${_OPENAI_ASSISTANT_ID_COMPOSER},MCP_SERVER_URL=${_MCP_SERVER_URL},WORKFLOW_PATH=/app/workflow.yaml,MCP_TIMEOUT_SECS=${_MCP_TIMEOUT_SECS}',
+        '--set-secrets=OPENAI_API_KEY=projects/$PROJECT_ID/secrets/OPENAI_API_KEY/versions/latest,MCP_API_KEY=projects/$PROJECT_ID/secrets/mcp-api-key/versions/latest,BIGQUERY_DATASET_ID=projects/$PROJECT_ID/secrets/BIGQUERY_DATASET_ID/versions/latest,BIGQUERY_TABLE_ID=projects/$PROJECT_ID/secrets/BIGQUERY_TABLE_ID/versions/latest',
       ]
 substitutions:
   _REGION: europe-west1
   _REPO: app-images
   _TAG: v1
+  _ADVISOR_GENERATION_MODE: openai_single_assistant
+  _OPENAI_RESPONSES_MODEL: gpt-5-turbo
+  _OPENAI_RESPONSES_TEMPERATURE: '0.2'
+  _OPENAI_ASSISTANT_ID_ASESOR: ''
+  _OPENAI_ASSISTANT_ID_ROUTER: ''
+  _OPENAI_ASSISTANT_ID_COMPOSER: ''
+  _MCP_SERVER_URL: 'http://127.0.0.1:8088'
+  _MCP_TIMEOUT_SECS: '60'
 images:
   - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/recavai-advisor:$_TAG'

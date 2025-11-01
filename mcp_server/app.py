@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import logging
 
-from fastapi.middleware.cors import CORSMiddleware
-from fastmcp import Server  # type: ignore
+from fastmcp import FastMCP
+from starlette.middleware.cors import CORSMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from .settings import settings
 from .tools.formatters import format_answer
@@ -15,31 +17,36 @@ from .tools.policy_check import policy_check
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-server = Server()
+server = FastMCP(name="recava-mcp-server")
 
-server.register_tool(lmstudio_chat)
-server.register_tool(policy_check)
-server.register_tool(format_answer)
-
-
-@server.get("/healthz")
-async def healthz():
-    return {
-        "status": "ok",
-        "lmstudio_base_url": settings.lmstudio_base_url,
-        "version": "0.1.0",
-    }
+server.add_tool(lmstudio_chat)
+server.add_tool(policy_check)
+server.add_tool(format_answer)
 
 
-@server.get("/info")
-async def info():
-    return {
-        "tools": [tool.name for tool in server.tools],
-        "max_completion_tokens": settings.max_completion_tokens,
-    }
+@server.custom_route("/healthz", methods=["GET"], name="healthz")
+async def healthz(_: Request) -> JSONResponse:
+    return JSONResponse(
+        {
+            "status": "ok",
+            "lmstudio_base_url": settings.lmstudio_base_url,
+            "version": "0.1.0",
+        }
+    )
 
 
-app = server.create_app()
+@server.custom_route("/info", methods=["GET"], name="info")
+async def info(_: Request) -> JSONResponse:
+    tools = await server.get_tools()
+    return JSONResponse(
+        {
+            "tools": sorted(tools.keys()),
+            "max_completion_tokens": settings.max_completion_tokens,
+        }
+    )
+
+
+app = server.http_app()
 
 app.add_middleware(
     CORSMiddleware,

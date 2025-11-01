@@ -14,6 +14,10 @@ packaging
 python-dotenv
 httpx
 firebase-admin
+pyyaml
+pydantic
+guardrails
+agents
 
 # --- Clientes de Google Cloud ---
 google-cloud-bigquery

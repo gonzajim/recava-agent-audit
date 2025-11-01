@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastmcp import tool  # type: ignore
 from pydantic import BaseModel, Field
+
+from ..fastmcp_compat import tool
 
 
 class FormatInput(BaseModel):

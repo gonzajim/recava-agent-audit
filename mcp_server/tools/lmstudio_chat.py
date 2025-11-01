@@ -5,10 +5,10 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastmcp import tool  # type: ignore
 from pydantic import BaseModel, Field
 
 from ..adapters.lmstudio_client import LMStudioClient, get_default_client
+from ..fastmcp_compat import tool
 from ..settings import settings
 
 logger = logging.getLogger(__name__)

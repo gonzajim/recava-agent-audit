@@ -1,115 +1,186 @@
-"""Chat generation strategy adapters for the advisor workflow."""
+"""Chat generation adapters supporting multiple advisor strategies."""
 
 from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 import httpx
-
-from agents import Agent, Runner, RunConfig, TResponseInputItem  # type: ignore
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class ChatGenerationContext:
-    """Context shared with chat generation adapters."""
+class Citation(BaseModel):
+    """Citation payload returned to the frontend."""
 
-    user_question: str
-    conversation_history: List[TResponseInputItem]
-    run_config: RunConfig
-    thread_id: Optional[str] = None
-
-
-@dataclass
-class ChatResult:
-    """Output from a chat generation adapter."""
-
-    text: str
-    citations: List[Dict[str, Any]] = field(default_factory=list)
-    new_items: List[Any] = field(default_factory=list)
+    title: Optional[str] = None
+    source: Optional[str] = None
+    chunk_ids: Optional[List[str]] = None
+    meta: Optional[Dict[str, Any]] = None
 
 
-class ChatGenerationError(Exception):
-    """Raised when the chat generator fails to produce a response."""
+class ChatResult(BaseModel):
+    """Response produced by an advisor adapter."""
+
+    response_text: str
+    citations: List[Citation] = Field(default_factory=list)
+    debug: Optional[Dict[str, Any]] = None
 
 
-class ChatAdapter(ABC):
-    """Strategy interface for different chat generation backends."""
+class BaseChatAdapter(ABC):
+    """Interface for advisor response generators."""
 
     @abstractmethod
-    async def generate(self, context: ChatGenerationContext) -> ChatResult:
-        """Generate a response for the given context."""
+    async def generate(
+        self,
+        query: str,
+        *,
+        user_id: str,
+        session_id: str,
+        context: Dict[str, Any],
+    ) -> ChatResult:
+        """Return the assistant answer for the given query."""
+
+    async def aclose(self) -> None:
+        """Optional hook for releasing adapter resources."""
+        return None
 
 
-class OpenAIAdapter(ChatAdapter):
-    """Adapter that keeps using the existing Agents SDK runner."""
+class SingleAssistantAdapter(BaseChatAdapter):
+    """Adapter backed by a single OpenAI Assistant / Responses invocation."""
 
-    def __init__(self, agent: Agent):
-        self._agent = agent
+    def __init__(
+        self,
+        client,
+        assistant_id: Optional[str] = None,
+        model: str = "gpt-5-turbo",
+        temperature: float = 0.2,
+    ) -> None:
+        self.client = client
+        self.assistant_id = assistant_id
+        self.model = model
+        self.temperature = temperature
 
-    async def generate(self, context: ChatGenerationContext) -> ChatResult:
-        try:
-            temp = await Runner.run(
-                self._agent,
-                input=[*context.conversation_history],
-                run_config=context.run_config,
-            )
-        except Exception as exc:
-            logger.exception("OpenAI adapter failed to generate response")
-            raise ChatGenerationError("openai_generation_failed") from exc
-
-        try:
-            output_text = temp.final_output_as(str)
-        except Exception as exc:
-            logger.exception("OpenAI adapter failed to extract final output")
-            raise ChatGenerationError("openai_output_parsing_failed") from exc
-
-        return ChatResult(text=output_text, citations=[], new_items=list(temp.new_items))
-
-
-class MCPAdapter(ChatAdapter):
-    """Adapter that calls the on-premise MCP Server over HTTP."""
-
-    def __init__(self, client: httpx.AsyncClient):
-        self._client = client
-
-    async def generate(self, context: ChatGenerationContext) -> ChatResult:
-        payload = {
-            "user_query": context.user_question,
-            "thread_id": context.thread_id,
+    async def generate(
+        self,
+        query: str,
+        *,
+        user_id: str,
+        session_id: str,
+        context: Dict[str, Any],
+    ) -> ChatResult:
+        metadata = {
+            "user_id": user_id,
+            "session_id": session_id,
+            "mode": "openai_single_assistant",
         }
-        try:
-            response = await self._client.post("", json=payload)
-            response.raise_for_status()
-        except httpx.TimeoutException as exc:
-            logger.warning("Timeout contacting MCP server", exc_info=True)
-            raise ChatGenerationError("mcp_timeout") from exc
-        except httpx.HTTPStatusError as exc:
-            logger.error(
-                "MCP server returned error status %s: %s",
-                exc.response.status_code,
-                exc.response.text,
-            )
-            raise ChatGenerationError(f"mcp_http_{exc.response.status_code}") from exc
-        except httpx.HTTPError as exc:
-            logger.error("HTTP error contacting MCP server: %s", exc, exc_info=True)
-            raise ChatGenerationError("mcp_http_error") from exc
+        if context:
+            metadata["context_keys"] = sorted(context.keys())
 
-        try:
-            data = response.json()
-        except ValueError as exc:
-            logger.error("Failed to decode MCP response JSON: %s", response.text)
-            raise ChatGenerationError("mcp_invalid_json") from exc
+        payload = {
+            "input": [{"role": "user", "content": query}],
+            "metadata": metadata,
+            "temperature": self.temperature,
+            "extra_headers": {"OpenAI-Beta": "assistants=v2"},
+        }
 
-        text = (data.get("response_text") or "").strip()
+        if self.assistant_id:
+            payload["assistant_id"] = self.assistant_id
+        else:
+            payload["model"] = self.model
+
+        logger.debug("Invoking single assistant with metadata=%s", metadata)
+        response = await self.client.responses.create(**payload)
+
+        return ChatResult(response_text=getattr(response, "output_text", "") or "", citations=[])
+
+
+class OnPremMCPAdapter(BaseChatAdapter):
+    """Adapter that proxies advisor requests to the on-prem MCP server."""
+
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        client: Optional[httpx.AsyncClient] = None,
+        timeout: float = 60.0,
+    ) -> None:
+        endpoint = base_url.rstrip("/")
+        if endpoint.endswith("/advisor/answer"):
+            self._endpoint = endpoint
+        else:
+            self._endpoint = f"{endpoint}/advisor/answer"
+
+        self._owns_client = client is None
+        self.client = client or httpx.AsyncClient(timeout=timeout)
+        self.api_key = api_key
+
+    async def generate(
+        self,
+        query: str,
+        *,
+        user_id: str,
+        session_id: str,
+        context: Dict[str, Any],
+    ) -> ChatResult:
+        payload = {
+            "query": query,
+            "user_id": user_id,
+            "session_id": session_id,
+            "context": context,
+        }
+        headers = {"x-api-key": self.api_key} if self.api_key else {}
+
+        logger.debug("Forwarding advisor request to MCP endpoint %s", self._endpoint)
+        response = await self.client.post(self._endpoint, json=payload, headers=headers)
+        response.raise_for_status()
+
+        data = response.json()
         citations = data.get("citations") or []
         if not isinstance(citations, list):
-            logger.warning("MCP citations payload is not a list; dropping value")
+            logger.warning("Unexpected citations payload from MCP: %s", type(citations))
             citations = []
 
-        return ChatResult(text=text, citations=citations, new_items=[])
+        return ChatResult(
+            response_text=data.get("response_text", "") or "",
+            citations=[Citation(**item) for item in citations if isinstance(item, dict)],
+            debug=data.get("debug"),
+        )
 
+    async def aclose(self) -> None:
+        if self._owns_client:
+            await self.client.aclose()
+
+
+class OpenAIAgentNetworkAdapter(BaseChatAdapter):
+    """Adapter that executes a workflow defined via AgentBuilder export."""
+
+    def __init__(self, executor: "WorkflowExecutor") -> None:
+        self.executor = executor
+
+    async def generate(
+        self,
+        query: str,
+        *,
+        user_id: str,
+        session_id: str,
+        context: Dict[str, Any],
+    ) -> ChatResult:
+        result = await self.executor.run(
+            query=query,
+            user_id=user_id,
+            session_id=session_id,
+            context=context,
+        )
+        citations = result.get("citations") or []
+        if not isinstance(citations, list):
+            logger.warning("Workflow executor returned non-list citations")
+            citations = []
+
+        return ChatResult(
+            response_text=result.get("response_text", "") or "",
+            citations=[Citation(**item) for item in citations if isinstance(item, dict)],
+            debug=result.get("debug"),
+        )

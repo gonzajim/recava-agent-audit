@@ -1,311 +1,105 @@
-"""Core workflow for advisor responses with citation aggregation."""
+"""Lightweight workflow executor for OpenAI agent networks."""
 
 from __future__ import annotations
 
-import asyncio
+import json
 import logging
-import re
-from typing import Any, Dict, List, Optional
-from uuid import uuid4
+import os
+from typing import Any, Dict, Optional
 
-from pydantic import BaseModel
-
-# NOTE: Replace these imports with the concrete implementations from your agent SDK.
-from agents import Agent, Runner, RunConfig, TResponseInputItem, trace  # type: ignore
-
-from .chat_generators import (
-    ChatAdapter,
-    ChatGenerationContext,
-    ChatGenerationError,
-)
-from .guardrails_utils import (
-    ctx,
-    guardrails_config,
-    guardrails_has_tripwire,
-    instantiate_guardrails,
-    load_config_bundle,
-    run_guardrails,
-    get_guardrail_checked_text,
-)
-
-PARALLEL_TIMEOUT_SECS = 45
 logger = logging.getLogger(__name__)
 
 
-async def _run_agent_with_timeout(
-    agent_obj: "Agent",
-    conversation_history: List["TResponseInputItem"],
-    run_cfg: "RunConfig",
-    timeout_s: int = PARALLEL_TIMEOUT_SECS,
-):
-    async def _run():
-        return await Runner.run(agent_obj, input=[*conversation_history], run_config=run_cfg)
+class WorkflowExecutor:
+    """Executes simple agent workflows exported from AgentBuilder."""
 
-    return await asyncio.wait_for(_run(), timeout=timeout_s)
+    def __init__(self, client, definition: Dict[str, Any]) -> None:
+        self.client = client
+        self.definition = definition or {}
 
-
-def _mk_run_cfg() -> "RunConfig":
-    return RunConfig(
-        trace_metadata={
-            "__trace_source__": "agent-builder",
-            "workflow_id": "wf_68f0d1e79e088190ac1065378ce1914901e19ebba6b37747",
+    async def run(
+        self,
+        *,
+        query: str,
+        user_id: str,
+        session_id: str,
+        context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        assistant_id = self._assistant_id_from_defn(default_env="OPENAI_ASSISTANT_ID_COMPOSER")
+        metadata = {
+            "user_id": user_id,
+            "session_id": session_id,
+            "mode": "openai_agent_network",
         }
-    )
+        if context:
+            metadata["context_keys"] = sorted(context.keys())
 
+        payload = {
+            "input": [{"role": "user", "content": query}],
+            "metadata": metadata,
+            "extra_headers": {"OpenAI-Beta": "assistants=v2"},
+        }
+        if assistant_id:
+            payload["assistant_id"] = assistant_id
+        else:
+            payload["model"] = os.getenv("OPENAI_RESPONSES_MODEL", "gpt-5-turbo")
 
-_URL_RE = re.compile(r"https?://[^\s\]\)>,;\"]+", re.IGNORECASE)
+        logger.debug("Workflow executor invoking assistant_id=%s", assistant_id)
+        response = await self.client.responses.create(**payload)
 
-
-def _normalize_citation(c: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "title": (c.get("title") or c.get("titulo") or c.get("name") or "").strip(),
-        "source": (c.get("source") or c.get("fuente") or "").strip(),
-        "url": (c.get("url") or c.get("link") or "").strip(),
-        "quote": (c.get("quote") or c.get("cita") or c.get("extracto") or "").strip(),
-        "date": (c.get("date") or c.get("fecha") or "").strip(),
-        "section": (c.get("section") or c.get("seccion") or "").strip(),
-    }
-
-
-def _extract_basic_citations_from_text(txt: str) -> List[Dict[str, Any]]:
-    if not txt:
-        return []
-    return [_normalize_citation({"url": m.group(0)}) for m in _URL_RE.finditer(txt)]
-
-
-def _dedupe_citations(citas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    seen, out = set(), []
-    for c in citas:
-        key = (c.get("url") or "", c.get("title") or "")
-        if key not in seen:
-            seen.add(key)
-            out.append(c)
-    return out
-
-
-def _parse_eval_output(name: str, temp_result) -> Dict[str, Any]:
-    base = {"agent": name, "veredicto": "RECHAZADO", "mejoras": "", "citas": []}
-    try:
-        parsed = temp_result.final_output.model_dump()
-        base["veredicto"] = (parsed.get("veredicto") or "").strip().upper() or "RECHAZADO"
-        base["mejoras"] = (parsed.get("mejoras") or "").strip()
-        raw_citas = parsed.get("citas") or parsed.get("references") or []
-        if isinstance(raw_citas, list):
-            base["citas"] = [_normalize_citation(ci) for ci in raw_citas if isinstance(ci, dict)]
-        return base
-    except Exception:
-        try:
-            txt = temp_result.final_output_as(str)
-        except Exception:
-            txt = ""
-        ver = (
-            "RECHAZADO"
-            if "RECHAZ" in txt.upper()
-            else "APROBADO"
-            if "APROB" in txt.upper()
-            else "RECHAZADO"
-        )
         return {
-            **base,
-            "veredicto": ver,
-            "mejoras": txt,
-            "citas": _extract_basic_citations_from_text(txt),
+            "response_text": getattr(response, "output_text", "") or "",
+            "citations": [],
+            "debug": {"workflow_entrypoint": self.definition.get("entrypoint")},
         }
 
-
-def _collect_available_citations(evals: List[Dict[str, Any]], a4_res) -> List[Dict[str, Any]]:
-    collected: List[Dict[str, Any]] = []
-    for ev in evals:
-        if ev.get("agent", "").startswith("A4"):
-            collected.extend(ev.get("citas", []))
-    try:
-        parsed = a4_res.final_output.model_dump()
-        raw = parsed.get("citas") or parsed.get("references") or []
-        if isinstance(raw, list):
-            collected.extend([_normalize_citation(ci) for ci in raw if isinstance(ci, dict)])
-    except Exception:
-        pass
-    try:
-        txt = a4_res.final_output_as(str)
-        collected.extend(_extract_basic_citations_from_text(txt))
-    except Exception:
-        pass
-    return _dedupe_citations(collected)
-
-
-def _build_final_synthesis_prompt(
-    user_question: str,
-    initial_answer: str,
-    evaluations: List[Dict[str, Any]],
-    citations: Optional[List[Dict[str, Any]]] = None,
-) -> str:
-    citations = citations or []
-    lines = []
-    for i, c in enumerate(citations, start=1):
-        title = c.get("title") or c.get("url") or "Fuente"
-        url = c.get("url") or ""
-        fuente = c.get("source") or ""
-        fecha = c.get("date") or ""
-        lines.append(f"[{i}] {title} — {fuente} {fecha} {url}".strip())
-    citas_bloque = "\n".join(lines) if lines else "Ninguna"
-
-    return f"""
-### Tarea
-Genera la mejor respuesta final a la pregunta del usuario aplicando, de forma mínima y precisa, las “mejoras” propuestas por los evaluadores cuyo veredicto fue RECHAZADO. Mantén lo que ya está bien según los evaluadores con veredicto APROBADO.
-
-### Pregunta original
-{user_question}
-
-### Borrador inicial (del asistente inicial)
-{initial_answer}
-
-### Evaluaciones (A1..A5)
-{evaluations}
-
-### Citas disponibles
-Estas son las únicas citas que puedes usar. Si no son necesarias, no las cites. No inventes nuevas fuentes.
-{citas_bloque}
-
-### Reglas de síntesis
-1) Aplica SOLO las mejoras de los evaluadores con veredicto RECHAZADO.
-2) No elimines aciertos ya validados por veredictos APROBADO.
-3) Conserva el estilo y formato del asistente inicial (alcance, fuentes, advertencias).
-4) Si introduces referencias, usa marcadores en línea [n] que correspondan al listado de "Citas disponibles".
-5) Si no hay RECHAZADOS, devuelve el borrador inicial tal cual.
-
-### Respuesta final requerida
-Devuelve ÚNICAMENTE el texto final para el usuario (con marcadores [n] si has usado citas).
-""".strip()
-
-
-class WorkflowInput(BaseModel):
-    input_as_text: str
-
-
-async def run_workflow(
-    workflow_input: WorkflowInput,
-    asistente_inicial: "Agent",
-    a1_estructura: "Agent",
-    a2_precision: "Agent",
-    a3_enfoque: "Agent",
-    a4_referencias: "Agent",
-    a5_temporal: "Agent",
-    agent: "Agent",
-    *,
-    chat_adapter: ChatAdapter,
-) -> Dict[str, Any]:
-    with trace("RecavAI-Agentic-Assistant"):
-        workflow = workflow_input.model_dump()
-        conversation_history: List["TResponseInputItem"] = [
-            {"role": "user", "content": [{"type": "input_text", "text": workflow["input_as_text"]}]}
-        ]
-
-        guardrails_inputtext = workflow["input_as_text"]
-        guardrails_result = await run_guardrails(
-            ctx,
-            guardrails_inputtext,
-            "text/plain",
-            instantiate_guardrails(load_config_bundle(guardrails_config)),
-            suppress_tripwire=True,
-            raise_guardrail_errors=True,
-        )
-        guardrails_checked = get_guardrail_checked_text(guardrails_result, guardrails_inputtext)
-        if guardrails_has_tripwire(guardrails_result):
-            return {
-                "message": (
-                    "Soy un asistente para responder preguntas relacionadas con Diligencia Debida en Sostenibilidad. "
-                    "Por favor, pruebe con una pregunta sobre ese tema. "
-                    "Contacto: info@observatoriorecava.es"
-                ),
-                "citas": [],
-            }
-
-        generation_context = ChatGenerationContext(
-            user_question=guardrails_checked,
-            conversation_history=[*conversation_history],
-            run_config=_mk_run_cfg(),
-            thread_id=str(uuid4()),
-        )
-
+    def _assistant_id_from_defn(self, default_env: str) -> Optional[str]:
         try:
-            initial_generation = await chat_adapter.generate(generation_context)
-        except ChatGenerationError as exc:
-            logger.error("Initial assistant generation failed: %s", exc, exc_info=True)
-            raise
+            entrypoint = self.definition.get("entrypoint")
+            nodes = self.definition.get("nodes") or {}
+            if entrypoint and entrypoint in nodes:
+                node_config = nodes[entrypoint].get("config") or {}
+                env_key = node_config.get("assistant_id_env")
+                if env_key:
+                    return os.getenv(env_key)
+        except Exception as exc:
+            logger.debug("Failed parsing workflow definition: %s", exc)
+        return os.getenv(default_env)
 
-        for item in initial_generation.new_items or []:
+
+def load_workflow_definition() -> Dict[str, Any]:
+    """Load workflow definition from env JSON or a YAML/JSON file."""
+
+    workflow_json = os.getenv("WORKFLOW_JSON")
+    if workflow_json:
+        try:
+            return json.loads(workflow_json)
+        except json.JSONDecodeError as exc:
+            logger.warning("Invalid WORKFLOW_JSON payload: %s", exc)
+
+    path = os.getenv("WORKFLOW_PATH")
+    if path and os.path.exists(path):
+        suffix = os.path.splitext(path)[1].lower()
+        if suffix in {".yaml", ".yml"}:
             try:
-                conversation_history.append(item.to_input_item())
-            except AttributeError:
-                logger.debug("Skipping adapter item without to_input_item: %s", item)
+                import yaml  # type: ignore
 
-        if not initial_generation.new_items:
-            conversation_history.append(
-                {
-                    "role": "assistant",
-                    "content": [
-                        {
-                            "type": "output_text",
-                            "text": initial_generation.text,
-                        }
-                    ],
-                }
-            )
+                with open(path, "r", encoding="utf-8") as handle:
+                    return yaml.safe_load(handle) or {}
+            except ImportError as exc:
+                logger.error("pyyaml not installed but workflow yaml requested: %s", exc)
+            except Exception as exc:
+                logger.error("Failed to load workflow yaml: %s", exc)
+        else:
+            try:
+                with open(path, "r", encoding="utf-8") as handle:
+                    return json.load(handle)
+            except Exception as exc:
+                logger.error("Failed to load workflow json: %s", exc)
 
-        initial_answer_text = initial_generation.text
-        asistente_inicial_result = {"output_text": initial_answer_text}
-        initial_citations = [
-            _normalize_citation(ci)
-            for ci in initial_generation.citations
-            if isinstance(ci, dict)
-        ]
-
-        eval_tasks = [
-            _run_agent_with_timeout(a1_estructura, conversation_history, _mk_run_cfg()),
-            _run_agent_with_timeout(a2_precision, conversation_history, _mk_run_cfg()),
-            _run_agent_with_timeout(a3_enfoque, conversation_history, _mk_run_cfg()),
-            _run_agent_with_timeout(a4_referencias, conversation_history, _mk_run_cfg()),
-            _run_agent_with_timeout(a5_temporal, conversation_history, _mk_run_cfg()),
-        ]
-
-        try:
-            a1_res, a2_res, a3_res, a4_res, a5_res = await asyncio.gather(*eval_tasks, return_exceptions=False)
-        except Exception:
-            a1_res = await Runner.run(a1_estructura, input=[*conversation_history], run_config=_mk_run_cfg())
-            a2_res = await Runner.run(a2_precision, input=[*conversation_history], run_config=_mk_run_cfg())
-            a3_res = await Runner.run(a3_enfoque, input=[*conversation_history], run_config=_mk_run_cfg())
-            a4_res = await Runner.run(a4_referencias, input=[*conversation_history], run_config=_mk_run_cfg())
-            a5_res = await Runner.run(a5_temporal, input=[*conversation_history], run_config=_mk_run_cfg())
-
-        for temp in (a1_res, a2_res, a3_res, a4_res, a5_res):
-            conversation_history.extend([item.to_input_item() for item in temp.new_items])
-
-        evals: List[Dict[str, Any]] = [
-            _parse_eval_output("A1 - Estructura", a1_res),
-            _parse_eval_output("A2 - Precisión", a2_res),
-            _parse_eval_output("A3 - Enfoque", a3_res),
-            _parse_eval_output("A4 - Referencias", a4_res),
-            _parse_eval_output("A5 - Temporal", a5_res),
-        ]
-
-        available_citations = _collect_available_citations(evals, a4_res)
-        available_citations = _dedupe_citations([*available_citations, *initial_citations])
-
-        synthesis_prompt = _build_final_synthesis_prompt(
-            user_question=guardrails_checked,
-            initial_answer=initial_answer_text,
-            evaluations=evals,
-            citations=available_citations,
-        )
-        final_agent_history = [
-            {"role": "user", "content": [{"type": "input_text", "text": synthesis_prompt}]}
-        ]
-        agent_temp = await Runner.run(agent, input=final_agent_history, run_config=_mk_run_cfg())
-        conversation_history.extend([item.to_input_item() for item in agent_temp.new_items])
-
-        return {
-            "asistente_inicial": asistente_inicial_result,
-            "evaluaciones": evals,
-            "respuesta_final": agent_temp.final_output_as(str),
-            "citas": available_citations,
-        }
+    logger.info("Using default workflow definition (composer passthrough).")
+    return {
+        "entrypoint": "composer",
+        "nodes": {"composer": {"type": "assistant", "config": {}}},
+        "edges": [],
+    }

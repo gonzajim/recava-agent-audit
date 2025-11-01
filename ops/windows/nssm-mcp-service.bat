@@ -23,7 +23,7 @@ if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 echo Registering service %SERVICE_NAME% using %NSSM_EXE%
 
 "%NSSM_EXE%" install %SERVICE_NAME% "%PYTHON_EXE%" "-m" "mcp_server.app"
-"%NSSM_EXE%" set %SERVICE_NAME% AppDirectory "%APP_DIR%"
+"%NSSM_EXE%" set %SERVICE_NAME% AppDirectory "%REPO_ROOT%"
 "%NSSM_EXE%" set %SERVICE_NAME% AppStdout "%LOG_DIR%\mcp-server.out.log"
 "%NSSM_EXE%" set %SERVICE_NAME% AppStderr "%LOG_DIR%\mcp-server.err.log"
 "%NSSM_EXE%" set %SERVICE_NAME% AppStdoutCreationDisposition 4

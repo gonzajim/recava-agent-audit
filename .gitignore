@@ -1,8 +1,15 @@
 # entorno virtual
 .venv/
 venv/
+# entornos virtuales específicos
+mcp_server/.venv/
 # variables de entorno
 .env
 # archivos temporales y caches
 __pycache__/
 *.py[cod]
+.firebase/
+logs/
+bubble_tmp.bin
+firestore-debug.log
+ops/windows/nssm/

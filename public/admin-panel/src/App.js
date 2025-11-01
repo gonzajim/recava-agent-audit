@@ -4,16 +4,18 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './firebase';
 import Login from './Login';
 import ChatHistoryViewer from './ChatHistoryViewer';
+import AgentsConfigEditor from './AgentsConfigEditor';
 
 // --- NUEVAS IMPORTACIONES PARA EL TEMA ---
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import theme from './theme'; // Importamos nuestro tema personalizado
-import { AppBar, Toolbar, Typography, Button, Box, Paper } from '@mui/material';
+import { AppBar, Toolbar, Typography, Button, Box, Paper, Tabs, Tab } from '@mui/material';
 
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeView, setActiveView] = useState('history');
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -22,6 +24,12 @@ function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setActiveView('history');
+    }
+  }, [user]);
 
   if (loading) {
     return <div>Cargando...</div>;
@@ -47,7 +55,21 @@ function App() {
         {/* Contenido Principal */}
         <main>
           {user ? (
-            <ChatHistoryViewer />
+            <Box sx={{ px: { xs: 1, sm: 2, md: 4 }, py: { xs: 2, md: 3 } }}>
+              <Tabs
+                value={activeView}
+                onChange={(_, value) => setActiveView(value)}
+                variant="scrollable"
+                allowScrollButtonsMobile
+              >
+                <Tab value="history" label="Historial de chats" />
+                <Tab value="config" label="Configuración de agentes" />
+              </Tabs>
+              <Box sx={{ mt: 3 }}>
+                {activeView === 'history' && <ChatHistoryViewer />}
+                {activeView === 'config' && <AgentsConfigEditor />}
+              </Box>
+            </Box>
           ) : (
             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}>
               <Paper elevation={3} sx={{ padding: 4 }}>

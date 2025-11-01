@@ -1,0 +1,24 @@
+entrypoint: router
+nodes:
+  router:
+    type: router
+    config:
+      policy: route_by_intent
+      intents:
+        - name: legal_opinion
+          next: composer
+        - name: retrieval
+          next: tool_user
+  tool_user:
+    type: assistant
+    config:
+      assistant_id_env: OPENAI_ASSISTANT_ID_ROUTER
+  composer:
+    type: assistant
+    config:
+      assistant_id_env: OPENAI_ASSISTANT_ID_COMPOSER
+edges:
+  - from: router
+    to: tool_user
+  - from: router
+    to: composer
