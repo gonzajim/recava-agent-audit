@@ -16,7 +16,6 @@ httpx
 firebase-admin
 pyyaml
 pydantic
-guardrails
 agents
 
 # --- Clientes de Google Cloud ---
