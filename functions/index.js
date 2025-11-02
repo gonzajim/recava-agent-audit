@@ -8,7 +8,9 @@ const { getAuth } = require("firebase-admin/auth");
 const { BigQuery } = require("@google-cloud/bigquery");
 
 // Global initialization
-initializeApp();
+initializeApp({
+  projectId: process.env.GCLOUD_PROJECT || process.env.FIREBASE_PROJECT_ID || undefined,
+});
 
 const region = "europe-west1";
 const ALLOWED_ORIGINS = new Set([

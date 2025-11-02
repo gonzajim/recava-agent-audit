@@ -13,17 +13,29 @@ from firebase_admin import auth as fb_auth, credentials
 logger = logging.getLogger(__name__)
 
 if not firebase_admin._apps:
+    project_id = os.getenv("FIREBASE_PROJECT_ID") or os.getenv("GCLOUD_PROJECT")
+    initialize_kwargs: Dict[str, Any] = {}
+    options: Dict[str, Any] = {}
+    if project_id:
+        options["projectId"] = project_id
+
     if os.getenv("FIREBASE_AUTH_EMULATOR_HOST"):
-        firebase_admin.initialize_app(
-            options={"projectId": os.getenv("FIREBASE_PROJECT_ID", "recava-agent-emulator")}
-        )
+        if options:
+            initialize_kwargs["options"] = options
+        firebase_admin.initialize_app(**initialize_kwargs)
     else:
         cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
         if cred_path and os.path.exists(cred_path):
-            firebase_admin.initialize_app(credentials.Certificate(cred_path))
-        else:
-            firebase_admin.initialize_app()
-    logger.info("Firebase Admin SDK initialized for advisor backend.")
+            initialize_kwargs["credential"] = credentials.Certificate(cred_path)
+        if options:
+            initialize_kwargs["options"] = options
+        firebase_admin.initialize_app(**initialize_kwargs)
+
+    logger.info(
+        "Firebase Admin SDK initialized for advisor backend (project=%s, emulator=%s).",
+        options.get("projectId", "auto"),
+        bool(os.getenv("FIREBASE_AUTH_EMULATOR_HOST")),
+    )
 
 
 ADMIN_WHITELIST = {
