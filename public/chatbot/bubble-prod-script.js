@@ -1,14 +1,25 @@
-document.addEventListener('DOMContentLoaded', function () {
-  // ===================== 1) FIREBASE =====================
-  const firebaseConfig = {
-    apiKey: "AIzaSyAAlSxno1oBOtyhh7ntS2mv8rkAnWeAzmM",
-    authDomain: "recava-auditor-dev.firebaseapp.com",
-    projectId: "recava-auditor-dev",
-    // FIX: bucket estándar de Firebase Storage
-    storageBucket: "recava-auditor-dev.appspot.com",
-    messagingSenderId: "370417116045",
-    appId: "1:370417116045:web:41c77969d5d880382d93c4",
-    measurementId: "G-2J8TTR4SD2"
+document.addEventListener('DOMContentLoaded', async function () {
+  // ===================== 1) CONFIGURACIÓN =====================
+  let appConfig = {};
+  try {
+    const response = await fetch('./app-config.json', { cache: 'no-store' });
+    if (response.ok) {
+      appConfig = await response.json();
+    } else {
+      console.warn('No se pudo cargar app-config.json (HTTP ' + response.status + '). Se usarán valores por defecto.');
+    }
+  } catch (error) {
+    console.warn('Fallo al cargar app-config.json. Se usarán valores por defecto.', error);
+  }
+
+  const firebaseConfig = appConfig.firebase || {
+    apiKey: "AIzaSyBxUCiBCbofCAhc-Pi5DEgUPlajKvcJiok",
+    authDomain: "divulgador-uclm-5b8b9.firebaseapp.com",
+    projectId: "divulgador-uclm-5b8b9",
+    storageBucket: "divulgador-uclm-5b8b9.firebasestorage.app",
+    messagingSenderId: "596892874241",
+    appId: "1:596892874241:web:a184e062be23746c587200",
+    measurementId: "G-75K01Z3B5R"
   };
   firebase.initializeApp(firebaseConfig);
   const auth = firebase.auth();
@@ -17,43 +28,35 @@ document.addEventListener('DOMContentLoaded', function () {
     firebase.auth().useEmulator('http://localhost:9099/');
   }
 
-  // Endpoints por entorno
-  const endpoints = {
-    prod: {
-      auditor: 'https://orchestrator-520199812528.europe-west1.run.app/chat_auditor',
-      advisor: 'https://orchestrator-520199812528.europe-west1.run.app/chat_assistant'
-    },
-    dev: {
-      auditor: 'https://orchestrator-dev-370417116045.europe-west1.run.app/chat_auditor',
-      advisor: 'https://orchestrator-dev-370417116045.europe-west1.run.app/chat_assistant'
-    },
-    local: {
-      auditor: 'http://localhost:8080/chat_auditor',
-      advisor: 'http://localhost:8080/chat_assistant'
-    }
-  };
-  let currentEndpoints = endpoints.prod;
-
-  async function configureEnvironment() {
+  const resolvedBaseUrl = (() => {
     if (location.hostname === 'localhost') {
-      currentEndpoints = endpoints.local; return;
+      const local = (appConfig.localBackendBaseUrl || '').trim();
+      if (local) return local;
     }
-    try {
-      const r = await fetch('/__firebase/init.json');
-      const cfg = await r.json();
-      currentEndpoints = (cfg?.projectId === 'recava-auditor') ? endpoints.prod : endpoints.dev;
-    } catch (_e) {
-      currentEndpoints = endpoints.dev;
+    const cfgUrl = (appConfig.backendBaseUrl || '').trim();
+    if (cfgUrl) return cfgUrl;
+    if (location.hostname === 'localhost') return 'http://localhost:8080';
+    return 'https://divulgador-uclm-858602261870.europe-west1.run.app';
+  })().replace(/\/$/, '');
+
+  const advisorPath = (() => {
+    if (appConfig.useLegacyEndpoint) {
+      return appConfig.legacyEndpoint || '/chat_assistant';
     }
-  }
-  const environmentReadyPromise = configureEnvironment();
+    return appConfig.advisorEndpoint || '/advisor/answer';
+  })();
+
+  const auditorPath = appConfig.auditorEndpoint || advisorPath || '/chat_auditor';
+
+  let currentEndpoints = {
+    advisor: `${resolvedBaseUrl}${advisorPath}`,
+    auditor: `${resolvedBaseUrl}${auditorPath}`
+  };
+
+  const environmentReadyPromise = Promise.resolve();
 
   function getOrchestratorBaseUrl() {
-    const ref = currentEndpoints?.auditor || currentEndpoints?.advisor;
-    if (!ref) return "";
-    if (ref.includes("/chat_auditor")) return ref.split("/chat_auditor")[0];
-    if (ref.includes("/chat_assistant")) return ref.split("/chat_assistant")[0];
-    return ref.replace(/\/$/, "");
+    return resolvedBaseUrl;
   }
 
   // ===================== 1B) UTILS RED/RESPUESTA =====================
@@ -1043,8 +1046,8 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function getEndpointSourceForMode(mode) {
-    if (mode === 'auditor') return '/chat_auditor';
-    if (mode === 'advisor') return '/chat_assistant';
+    if (mode === 'auditor') return auditorPath;
+    if (mode === 'advisor') return advisorPath;
     return undefined;
   }
 

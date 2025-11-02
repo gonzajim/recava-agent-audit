@@ -4,19 +4,19 @@ import { getAuth } from "firebase/auth";
 import { getFunctions, httpsCallable } from "firebase/functions";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAAlSxno1oBOtyhh7ntS2mv8rkAnWeAzmM",
-  authDomain: "recava-auditor-dev.firebaseapp.com",
-  projectId: "recava-auditor-dev",
-  storageBucket: "recava-auditor-dev.firebasestorage.app",
-  messagingSenderId: "370417116045",
-  appId: "1:370417116045:web:c282edf6a5c02cfd2d93c4",
-  measurementId: "G-Y2MQZ54LLF"
+  apiKey: "AIzaSyBxUCiBCbofCAhc-Pi5DEgUPlajKvcJiok",
+  authDomain: "divulgador-uclm-5b8b9.firebaseapp.com",
+  projectId: "divulgador-uclm-5b8b9",
+  storageBucket: "divulgador-uclm-5b8b9.firebasestorage.app",
+  messagingSenderId: "596892874241",
+  appId: "1:596892874241:web:a184e062be23746c587200",
+  measurementId: "G-75K01Z3B5R"
 };
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-const functions = getFunctions(app, 'europe-west1'); // Asegúrate de usar la región correcta
+const functions = getFunctions(app, "europe-west1"); // Asegurate de usar la region correcta
 
 // Exportamos las funciones callable
-export const getChatHistory = httpsCallable(functions, 'getChatHistory');
-export const updateExpertResponse = httpsCallable(functions, 'updateExpertResponse');
+export const getChatHistory = httpsCallable(functions, "getChatHistory");
+export const updateExpertResponse = httpsCallable(functions, "updateExpertResponse");

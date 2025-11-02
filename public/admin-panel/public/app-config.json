@@ -1,0 +1,10 @@
+{
+  "backendBaseUrl": "https://divulgador-uclm-858602261870.europe-west1.run.app",
+  "adminConfigEndpoint": "/admin/agents-config",
+  "historyFunctions": {
+    "enabled": true,
+    "region": "europe-west1",
+    "getChatHistoryUrl": "https://europe-west1-divulgador-uclm-5b8b9.cloudfunctions.net/getChatHistory",
+    "updateExpertResponseUrl": "https://europe-west1-divulgador-uclm-5b8b9.cloudfunctions.net/updateExpertResponse"
+  }
+}

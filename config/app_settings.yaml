@@ -10,6 +10,8 @@ advisor:
 
 web:
   cors_allowed_origins:
-    - https://recava-auditor-dev.web.app
-    - https://recava-auditor.web.app
+    - https://divulgador-uclm.web.app
+    - https://divulgador-uclm.firebaseapp.com
+    - https://divulgador-uclm-admin.web.app
+    - https://divulgador-uclm-admin.firebaseapp.com
     - http://localhost:8000

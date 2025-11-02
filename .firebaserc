@@ -1,27 +1,15 @@
 {
   "projects": {
-    "prod": "recava-auditor",
-    "dev": "recava-auditor-dev",
-    "default": "recava-auditor-dev"
+    "default": "divulgador-uclm-5b8b9"
   },
   "targets": {
-    "recava-auditor-dev": {
+    "divulgador-uclm-5b8b9": {
       "hosting": {
-        "chatbot": [
-          "recava-auditor-dev"
+        "chat": [
+          "divulgador-uclm"
         ],
-        "admin-panel": [
-          "recava-auditor-dev-panel"
-        ]
-      }
-    },
-    "recava-auditor": {
-      "hosting": {
-        "chatbot": [
-          "recava-auditor"
-        ],
-        "admin-panel": [
-          "recava-auditor-panel"
+        "admin": [
+          "divulgador-uclm-admin"
         ]
       }
     }

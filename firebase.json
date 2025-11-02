@@ -1,24 +1,41 @@
 {
-  "functions": {
-    "source": "functions"
-  },
   "hosting": [
     {
-      "target": "chatbot",
+      "target": "chat",
       "public": "public/chatbot",
       "ignore": [
-        "firebase.json",
         "**/.*",
         "**/node_modules/**"
+      ],
+      "headers": [
+        {
+          "source": "**/*.html",
+          "headers": [
+            {
+              "key": "X-Content-Type-Options",
+              "value": "nosniff"
+            }
+          ]
+        }
       ]
     },
     {
-      "target": "admin-panel",
+      "target": "admin",
       "public": "public/admin-panel/build",
       "ignore": [
-        "firebase.json",
         "**/.*",
         "**/node_modules/**"
+      ],
+      "headers": [
+        {
+          "source": "**/*.html",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        }
       ],
       "rewrites": [
         {
@@ -28,6 +45,9 @@
       ]
     }
   ],
+  "functions": {
+    "source": "functions"
+  },
   "emulators": {
     "auth": {
       "port": 9099

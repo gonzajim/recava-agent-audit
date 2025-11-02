@@ -26,6 +26,11 @@ if not firebase_admin._apps:
     logger.info("Firebase Admin SDK initialized for advisor backend.")
 
 
+ADMIN_WHITELIST = {
+    "gonzalo.jimenez.martin@gmail.com",
+}
+
+
 async def require_firebase_user(authorization: str = Header(default=None)) -> Dict[str, Any]:
     """Validate Firebase ID token and ensure email is verified."""
     if not authorization or not authorization.startswith("Bearer "):
@@ -54,6 +59,7 @@ async def require_admin_user(authorization: str = Header(default=None)) -> Dict[
         for email in os.getenv("ADMIN_ALLOWED_EMAILS", "").split(",")
         if email.strip()
     }
+    allowed_emails.update(ADMIN_WHITELIST)
     email = (decoded.get("email") or "").lower()
 
     is_admin_claim = any(

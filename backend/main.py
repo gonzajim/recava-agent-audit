@@ -41,12 +41,15 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="RecavAI Advisor API")
 
+_web_settings = get_settings_section("web")
+_allowed_origins = _web_settings.get("cors_allowed_origins") or ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Idempotency-Key"],
 )
 
 router = APIRouter()

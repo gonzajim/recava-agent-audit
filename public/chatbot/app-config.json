@@ -1,0 +1,24 @@
+{
+  "backendBaseUrl": "https://divulgador-uclm-858602261870.europe-west1.run.app",
+  "useLegacyEndpoint": false,
+  "advisorEndpoint": "/advisor/answer",
+  "legacyEndpoint": "/chat_assistant",
+  "corsAllowedOrigins": [
+    "https://divulgador-uclm.web.app",
+    "https://divulgador-uclm.firebaseapp.com",
+    "https://divulgador-uclm-admin.web.app",
+    "https://divulgador-uclm-admin.firebaseapp.com"
+  ],
+  "firebase": {
+    "apiKey": "AIzaSyBxUCiBCbofCAhc-Pi5DEgUPlajKvcJiok",
+    "authDomain": "divulgador-uclm-5b8b9.firebaseapp.com",
+    "projectId": "divulgador-uclm-5b8b9",
+    "storageBucket": "divulgador-uclm-5b8b9.firebasestorage.app",
+    "messagingSenderId": "596892874241",
+    "appId": "1:596892874241:web:a184e062be23746c587200",
+    "measurementId": "G-75K01Z3B5R"
+  },
+  "auth": {
+    "requireLogin": true
+  }
+}
