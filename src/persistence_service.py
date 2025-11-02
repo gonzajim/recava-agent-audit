@@ -14,7 +14,6 @@ def persist_conversation_turn(thread_id: str, user_message: str, assistant_respo
             endpoint_source=endpoint_source,
             run_id=kwargs.get('run_id'),
             assistant_name=kwargs.get('assistant_name'),
-            user_id=kwargs.get('user_id'),
             uid=kwargs.get('uid'),
             email=kwargs.get('email'),
             email_verified=kwargs.get('email_verified'),

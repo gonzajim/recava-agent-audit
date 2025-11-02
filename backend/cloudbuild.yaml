@@ -29,7 +29,7 @@ steps:
         '--memory=2Gi',
         '--concurrency=20',
         '--timeout=240',
-        '--vpc-connector=projects/$PROJECT_ID/locations/${_REGION}/connectors/recava-advisor-conn',
+        '--vpc-connector=projects/$PROJECT_ID/locations/${_REGION}/connectors/recava-connector',
         '--egress-settings=all',
         '--allow-unauthenticated',
         '--set-env-vars=ADVISOR_GENERATION_MODE=${_ADVISOR_GENERATION_MODE},OPENAI_RESPONSES_MODEL=${_OPENAI_RESPONSES_MODEL},OPENAI_RESPONSES_TEMPERATURE=${_OPENAI_RESPONSES_TEMPERATURE}',

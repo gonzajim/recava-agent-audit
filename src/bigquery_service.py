@@ -18,7 +18,6 @@ def insert_chat_turn_to_bigquery(
     endpoint_source: str,
     run_id: Optional[str] = None,
     assistant_name: Optional[str] = None,
-    user_id: Optional[str] = None,
     uid: Optional[str] = None,
     email: Optional[str] = None,
     email_verified: Optional[bool] = None,
@@ -37,8 +36,6 @@ def insert_chat_turn_to_bigquery(
         row["run_id"] = run_id
     if assistant_name is not None:
         row["assistant_name"] = assistant_name
-    if user_id is not None:
-        row["user_id"] = user_id
     if uid is not None:
         row["uid"] = uid
     if email is not None:

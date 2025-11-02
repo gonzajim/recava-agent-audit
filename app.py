@@ -8,6 +8,7 @@ from flask import request, jsonify, abort
 
 # --- Configuración base y clientes externos ---
 from src.config import app, logger, client, ORCHESTRATOR_ASSISTANT_ID, ASISTENTE_ID
+from src.app_settings import get_settings_section
 
 # Persistencia / OpenAI / BigQuery (tuyos)
 from src.persistence_service import persist_conversation_turn
@@ -55,16 +56,24 @@ firestore_db = firestore.client()
 # 1) CORS y Rate Limiting
 # =============================================================================
 # Orígenes permitidos: Lee desde variable de entorno o usa defaults seguros
-_allowed_origins_str = os.getenv("CORS_ORIGINS", "https://recava-auditor-dev.web.app,https://recava-auditor.web.app,http://localhost:8000")
-_allowed_origins = [origin.strip() for origin in _allowed_origins_str.split(",") if origin.strip()]
+web_settings = get_settings_section("web")
+default_origins = web_settings.get(
+    "cors_allowed_origins",
+    [
+        "https://recava-auditor-dev.web.app",
+        "https://recava-auditor.web.app",
+        "http://localhost:8000",
+    ],
+)
 
-# Si no se define nada específico, permitir solo los dominios de Firebase y localhost
+_allowed_origins_env = os.getenv("CORS_ORIGINS")
+if _allowed_origins_env:
+    _allowed_origins = [origin.strip() for origin in _allowed_origins_env.split(",") if origin.strip()]
+else:
+    _allowed_origins = list(default_origins)
+
 if not _allowed_origins or "*" in _allowed_origins:
-    _allowed_origins = [
-        "https://recava-auditor-dev.web.app", # Tu entorno de dev
-        "https://recava-auditor.web.app",   # Tu (futuro) entorno de prod
-        "http://localhost:8000"           # Para pruebas locales
-    ]
+    _allowed_origins = list(default_origins)
     logger.warning(f"CORS_ORIGINS no definida o '*', usando defaults seguros: {_allowed_origins}")
 
 CORS(
@@ -148,9 +157,7 @@ def require_firebase_user_or_403():
 
 
 def _build_user_metadata(decoded_user: dict) -> dict:
-    user_id = decoded_user.get("user_id") or decoded_user.get("uid")
     return {
-        "user_id": user_id,
         "uid": decoded_user.get("uid"),
         "email": decoded_user.get("email"),
         "email_verified": decoded_user.get("email_verified"),

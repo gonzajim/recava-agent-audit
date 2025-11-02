@@ -16,6 +16,7 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 from src.agents_factory import get_agents_bundle, reset_agents_bundle
+from src.app_settings import get_settings_section
 from src.config_loader import (
     AppConfig,
     list_instruction_files,
@@ -57,16 +58,28 @@ class AgentsConfigUpdate(BaseModel):
 
 
 async def _build_adapter() -> Tuple[BaseChatAdapter, Dict[str, Any]]:
-    mode = os.getenv("ADVISOR_GENERATION_MODE", "openai_single_assistant").strip().lower()
+    advisor_settings = get_settings_section("advisor")
+
+    mode_value = os.getenv("ADVISOR_GENERATION_MODE") or advisor_settings.get(
+        "generation_mode", "openai_single_assistant"
+    )
+    mode = str(mode_value).strip().lower()
     resources: Dict[str, Any] = {"mode": mode}
 
     if mode == "openai_single_assistant":
         client = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        model_name = os.getenv("OPENAI_RESPONSES_MODEL") or advisor_settings.get(
+            "responses_model", "gpt-5-turbo"
+        )
+        temperature_value = os.getenv("OPENAI_RESPONSES_TEMPERATURE")
+        if temperature_value is None:
+            temperature_value = advisor_settings.get("responses_temperature", 0.2)
+
         adapter = SingleAssistantAdapter(
             client=client,
             assistant_id=os.getenv("OPENAI_ASSISTANT_ID_ASESOR"),
-            model=os.getenv("OPENAI_RESPONSES_MODEL", "gpt-5-turbo"),
-            temperature=float(os.getenv("OPENAI_RESPONSES_TEMPERATURE", "0.2")),
+            model=str(model_name),
+            temperature=float(temperature_value),
         )
         resources["openai_client"] = client
         return adapter, resources
@@ -74,7 +87,10 @@ async def _build_adapter() -> Tuple[BaseChatAdapter, Dict[str, Any]]:
     if mode == "onprem_mcp_server":
         base_url = os.environ["MCP_SERVER_URL"]
         api_key = os.environ.get("MCP_API_KEY", "")
-        timeout = float(os.getenv("MCP_TIMEOUT_SECS", "60.0"))
+        timeout_value = os.getenv("MCP_TIMEOUT_SECS")
+        if timeout_value is None:
+            timeout_value = advisor_settings.get("mcp_timeout_secs", 60.0)
+        timeout = float(timeout_value)
         client = httpx.AsyncClient(timeout=timeout)
         adapter = OnPremMCPAdapter(base_url=base_url, api_key=api_key, client=client)
         resources["httpx_client"] = client
@@ -223,7 +239,7 @@ async def advisor_answer(request: Request, user: Dict[str, Any] = Depends(requir
 
     await insert_chat_turn_to_bigquery(
         session_id=str(session_id),
-        user_id=user.get("uid"),
+        uid=user.get("uid"),
         user_email=user.get("email"),
         user_verified=user.get("email_verified"),
         query=query,

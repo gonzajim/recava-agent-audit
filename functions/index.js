@@ -1,6 +1,8 @@
 // functions/index.js
 
+const functions = require("firebase-functions");
 const { onRequest } = require("firebase-functions/v2/https");
+const admin = require("firebase-admin");
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { BigQuery } = require("@google-cloud/bigquery");
@@ -138,3 +140,37 @@ exports.updateExpertResponse = onRequest({ region, memory: "256MiB" }, async (re
     }
   });
 });
+
+//
+// --- AÑADE ESTA NUEVA FUNCIÓN AL FINAL DE TU ARCHIVO ---
+//
+exports.setMyAdminClaim = functions
+    .region("europe-west1") // Asegúrate que la región coincide con tus otras funciones
+    .https.onRequest(async (req, res) => {
+        
+        // --- ¡IMPORTANTE! Reemplaza este UID por tu UID real ---
+        const YOUR_UID = "AMaDy7n2iRQLproofi8UDDPuK472";
+
+        // --- (Opcional) Seguridad simple para que solo tú la llames ---
+        // const secretKey = req.query.key;
+        // if (secretKey !== "mi-clave-secreta-123") {
+        //     res.status(401).send("No autorizado");
+        //     return;
+        // }
+
+        try {
+            // Asignamos el claim 'admin: true' a tu UID
+            await admin.auth().setCustomUserClaims(YOUR_UID, { admin: true });
+            
+            // Forzamos el refresco del token
+            await admin.auth().revokeRefreshTokens(YOUR_UID);
+
+            const msg = `¡Éxito! Claim 'admin:true' asignado a ${YOUR_UID}. Cierra sesión y vuelve a entrar.`;
+            console.log(msg);
+            res.status(200).send(msg);
+
+        } catch (error) {
+            console.error("Error asignando el claim:", error);
+            res.status(500).send("Error: " + error.message);
+        }
+    });

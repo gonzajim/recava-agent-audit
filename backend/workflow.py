@@ -7,7 +7,11 @@ import logging
 import os
 from typing import Any, Dict, Optional
 
+from src.app_settings import get_settings_section
+
 logger = logging.getLogger(__name__)
+_advisor_settings = get_settings_section("advisor")
+_default_responses_model = _advisor_settings.get("responses_model", "gpt-5-turbo")
 
 
 class WorkflowExecutor:
@@ -42,7 +46,7 @@ class WorkflowExecutor:
         if assistant_id:
             payload["assistant_id"] = assistant_id
         else:
-            payload["model"] = os.getenv("OPENAI_RESPONSES_MODEL", "gpt-5-turbo")
+            payload["model"] = os.getenv("OPENAI_RESPONSES_MODEL") or _default_responses_model
 
         logger.debug("Workflow executor invoking assistant_id=%s", assistant_id)
         response = await self.client.responses.create(**payload)

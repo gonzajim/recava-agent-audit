@@ -7,9 +7,17 @@ from flask_cors import CORS
 from google.cloud import bigquery
 from packaging import version
 
+from src.app_settings import get_settings_section
+
 # --- 1. Inicialización de Flask y CORS ---
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True, methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], allow_headers=["Content-Type", "Authorization", "X-Requested-With"])
+CORS(
+    app,
+    resources={r"/*": {"origins": "*"}},
+    supports_credentials=True,
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+)
 
 # --- 2. Configuración Centralizada de Logging ---
 logger = logging.getLogger(__name__)
@@ -17,7 +25,7 @@ logger.setLevel(logging.INFO)
 if not logger.handlers:
     stream_handler = logging.StreamHandler()
     formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(process)d - %(filename)s:%(lineno)d - %(message)s'
+        "%(asctime)s - %(name)s - %(levelname)s - %(process)d - %(filename)s:%(lineno)d - %(message)s"
     )
     stream_handler.setFormatter(formatter)
     logger.addHandler(stream_handler)
@@ -41,8 +49,9 @@ if not ASISTENTE_ID:
     raise ValueError("Missing ASISTENTE_ID environment variable.")
 
 # <-- NUEVO: Variables de Entorno para BigQuery ---
-BIGQUERY_DATASET_ID = os.getenv("BIGQUERY_DATASET_ID")
-BIGQUERY_TABLE_ID = os.getenv("BIGQUERY_TABLE_ID")
+bigquery_settings = get_settings_section("bigquery")
+BIGQUERY_DATASET_ID = os.getenv("BIGQUERY_DATASET_ID") or bigquery_settings.get("dataset_id")
+BIGQUERY_TABLE_ID = os.getenv("BIGQUERY_TABLE_ID") or bigquery_settings.get("table_id")
 
 if not all([BIGQUERY_DATASET_ID, BIGQUERY_TABLE_ID]):
     logger.critical("Missing BigQuery environment variables (BIGQUERY_DATASET_ID, BIGQUERY_TABLE_ID).")

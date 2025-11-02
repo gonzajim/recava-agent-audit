@@ -183,7 +183,7 @@ async def test_bigquery_insert_includes_mode(monkeypatch: pytest.MonkeyPatch) ->
 
     await insert_chat_turn_to_bigquery(
         session_id="sess",
-        user_id="uid",
+        uid="uid",
         user_email="user@example.com",
         user_verified=True,
         query="hola",

@@ -10,11 +10,14 @@ from typing import Any, Dict, List, Optional
 from fastapi.concurrency import run_in_threadpool
 from google.cloud import bigquery
 
+from src.app_settings import get_settings_section
+
 logger = logging.getLogger(__name__)
 
 DISABLE_BIGQUERY = os.getenv("DISABLE_BIGQUERY", "0") == "1"
-_DATASET = os.getenv("BIGQUERY_DATASET_ID")
-_TABLE = os.getenv("BIGQUERY_TABLE_ID")
+_bigquery_settings = get_settings_section("bigquery")
+_DATASET = os.getenv("BIGQUERY_DATASET_ID") or _bigquery_settings.get("dataset_id")
+_TABLE = os.getenv("BIGQUERY_TABLE_ID") or _bigquery_settings.get("table_id")
 _bq_client: Optional[bigquery.Client] = None
 
 
@@ -28,7 +31,7 @@ def _get_bigquery_client() -> bigquery.Client:
 async def insert_chat_turn_to_bigquery(
     *,
     session_id: str,
-    user_id: Optional[str],
+    uid: Optional[str],
     user_email: Optional[str],
     user_verified: Optional[bool],
     query: str,
@@ -53,7 +56,7 @@ async def insert_chat_turn_to_bigquery(
         "assistant_response": response_text,
         "endpoint_source": endpoint_source,
         "mode": mode,
-        "uid": user_id,
+        "uid": uid,
         "email": user_email,
         "email_verified": user_verified,
         "citations": citations or [],

@@ -1,0 +1,15 @@
+bigquery:
+  dataset_id: divulgador_uclm_audit
+  table_id: chat_history
+
+advisor:
+  generation_mode: openai_single_assistant
+  responses_model: gpt-5-turbo
+  responses_temperature: 0.0
+  mcp_timeout_secs: 60.0
+
+web:
+  cors_allowed_origins:
+    - https://recava-auditor-dev.web.app
+    - https://recava-auditor.web.app
+    - http://localhost:8000
