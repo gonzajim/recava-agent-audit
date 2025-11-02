@@ -29,7 +29,8 @@ steps:
       - '8080'
       - '--project'
       - '${PROJECT_ID}'
-      - '--update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest,ORCHESTRATOR_ASSISTANT_ID=ORCHESTRATOR_ASSISTANT_ID:latest,ASISTENTE_ID=ASISTENTE_ID:latest,AUDITOR_ID=AUDITOR_ID:latest,BIGQUERY_DATASET_ID=BIGQUERY_DATASET_ID:latest,BIGQUERY_TABLE_ID=BIGQUERY_TABLE_ID:latest'
+      - '--update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest,ORCHESTRATOR_ASSISTANT_ID=ORCHESTRATOR_ASSISTANT_ID:latest,ASISTENTE_ID=ASISTENTE_ID:latest,AUDITOR_ID=AUDITOR_ID:latest,BIGQUERY_DATASET_ID=BIGQUERY_DATASET_ID:latest,BIGQUERY_TABLE_ID=BIGQUERY_TABLE_ID:latest,GOOGLE_APPLICATION_CREDENTIALS=firebase-admin-sa:latest'
+      - '--set-env-vars=FIREBASE_PROJECT_ID=${PROJECT_ID},ADMIN_ALLOWED_EMAILS=${_ADMIN_ALLOWED_EMAILS}'
       - '--timeout=300s'
       - '--concurrency=80'
       - '--cpu=1'
@@ -81,6 +82,7 @@ steps:
 substitutions:
   _SERVICE_NAME: 'orchestrator'
   _FIREBASE_PROJECT_ALIAS: 'prod'
+  _ADMIN_ALLOWED_EMAILS: 'gonzalo.jimenez.martin@gmail.com'
 
 options:
   defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
