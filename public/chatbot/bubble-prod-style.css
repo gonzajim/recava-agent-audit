@@ -578,6 +578,34 @@ body {
 }
 .selection-container .mode-card { margin: 0; }
 
+/* -------------------------------------------------------------------------- */
+/* FOOTER LEGAL                                                              */
+/* -------------------------------------------------------------------------- */
+
+.legal-footer {
+  margin: 1.5rem auto 2rem;
+  padding: 1rem 0;
+  width: 100%;
+  max-width: 1100px;
+  border-top: 1px solid var(--borde-general);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 2.5rem;
+  flex-wrap: wrap;
+  font-size: .9rem;
+  color: var(--texto-gris-sutil);
+}
+.legal-footer a {
+  color: var(--texto-gris-sutil);
+  text-decoration: none;
+  transition: color .2s ease;
+}
+.legal-footer a:hover {
+  color: var(--uclm-rojo-principal);
+  text-decoration: underline;
+}
+
 @media (max-width: 720px) {
   .mode-grid { grid-template-columns: 1fr; }
 }

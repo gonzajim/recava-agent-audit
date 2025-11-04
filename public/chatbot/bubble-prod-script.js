@@ -39,8 +39,9 @@ document.addEventListener('DOMContentLoaded', function () {
       currentEndpoints = endpoints.local; return;
     }
     try {
-      const r = await fetch('/__firebase/init.json');
-      const cfg = await r.json();
+      const initResp = await fetch('/__/firebase/init.json');
+      if (!initResp.ok) throw new Error(`init.json ${initResp.status}`);
+      const cfg = await initResp.json().catch(() => null);
       currentEndpoints = (cfg?.projectId === 'recava-auditor') ? endpoints.prod : endpoints.dev;
     } catch (_e) {
       currentEndpoints = endpoints.dev;
@@ -68,7 +69,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     return payload; // retrocompatibilidad con APIs que devuelven objeto directo
   }
-  function withTimeout(ms = 20000) {
+  function withTimeout(ms = 90000) {
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort(), ms);
     return { signal: controller.signal, cancel: () => clearTimeout(t) };
@@ -348,16 +349,31 @@ document.addEventListener('DOMContentLoaded', function () {
     grid.className = 'mode-grid';
     grid.innerHTML = `
       <article class="mode-card mode-card--advisor">
-        <header class="mode-card__header">Modo Asesor</header>
+        <header class="mode-card__header">Modo Asesor (Cumplimiento en sostenibilidad)</header>
         <div class="mode-card__body">
           <p class="mode-card__text">
-            En el modo Asesor, el asistente se comporta como un experto en sostenibilidad corporativa.
-            Puedes consultarle cómo cumplir con la CSRD, preparar indicadores GRI,
-            interpretar las NEIS o estructurar la memoria de sostenibilidad.
+            En Modo Asesor, el asistente actúa como experto en diligencia debida y cumplimiento normativo en sostenibilidad,
+            alineado con la CSDDD y normativa conexa (p. ej., EUDR, canales de alerta, PRL, etc.).
+            Su función es ayudar a implantar políticas y códigos, analizar y priorizar riesgos, diseñar controles y trazabilidad,
+            definir medidas correctoras y remediación, y operativizar los requisitos con estándares (OCDE, OIT, ISO).
           </p>
+          <div class="mode-card__text">
+            <strong>Qué sí hace</strong>
+            <ul class="mode-card__text">
+              <li>Traducir requisitos legales en procedimientos, cláusulas, checklists y KPIs operativos.</li>
+              <li>Orientar sobre cómo implementar las medidas de diligencia debida (gobernanza, matriz de riesgos, canales, auditorías internas, evidencias).</li>
+              <li>Señalar qué datos/evidencias generan insumos útiles para CSRD/GRI sin elaborar la memoria.</li>
+            </ul>
+          </div>
+          <div class="mode-card__text">
+            <strong>Qué no hace</strong>
+            <ul class="mode-card__text">
+              <li>No redacta ni cierra el informe de sostenibilidad bajo CSRD ni sustituye verificaciones externas.</li>
+            </ul>
+          </div>
           <p class="mode-card__text">
-            Las respuestas se basan en fuentes normativas verificadas y conocimiento especializado,
-            por lo que es ideal para consultas técnicas, operativas o formativas sin intervención humana directa.
+            Las respuestas se basan en fuentes normativas verificadas (UE/BOE/autoridades), estándares reconocidos (ISO/OCDE/OIT/GRI)
+            y el corpus metodológico RECAVA, por lo que resultan idóneas para consultas técnicas y operativas sin intervención humana directa.
           </p>
         </div>
         <footer class="mode-card__footer">
@@ -368,16 +384,31 @@ document.addEventListener('DOMContentLoaded', function () {
       </article>
 
       <article class="mode-card mode-card--auditor">
-        <header class="mode-card__header">Modo Auditor</header>
+        <header class="mode-card__header">Modo Auditor (Cumplimiento en sostenibilidad)</header>
         <div class="mode-card__body">
           <p class="mode-card__text">
-            En el modo Auditor, el asistente adopta el rol de un auditor digital de sostenibilidad.
-            Revisa tus respuestas, identifica posibles incumplimientos y puede solicitar
-            información adicional sobre tu empresa, sedes, políticas o métricas.
+            En Modo Auditor, el asistente actúa como auditor digital de cumplimiento: revisa políticas, procedimientos y evidencias,
+            detecta brechas frente a la CSDDD y normas relacionadas (p. ej., EUDR, canales de alerta, PRL), solicita información adicional cuando falta
+            y devuelve un plan de acciones correctivas con responsables, plazos y evidencias mínimas.
           </p>
+          <div class="mode-card__text">
+            <strong>Qué sí hace</strong>
+            <ul class="mode-card__text">
+              <li>Evalúa conformidad de tu sistema (políticas/códigos, análisis de riesgos, trazabilidad, remediación) frente a requisitos legales y estándares operativos (ISO/OCDE/OIT/GRI).</li>
+              <li>Pide y analiza muestras documentales (p. ej., matrices de riesgo, cláusulas a proveedores, registros de formación/SST, geolocalización EUDR).</li>
+              <li>Emite hallazgos clasificados (Crítico/Alto/Medio), con medidas, evidencias y prioridad.</li>
+            </ul>
+          </div>
+          <div class="mode-card__text">
+            <strong>Qué no hace</strong>
+            <ul class="mode-card__text">
+              <li>No sustituye auditorías de tercera parte ni inspecciones oficiales, ni emite certificaciones.</li>
+              <li>No redacta ni valida el informe CSRD; solo indica qué datos/evidencias del cumplimiento alimentan ese reporte.</li>
+            </ul>
+          </div>
           <p class="mode-card__text">
-            Este modo está diseñado para recolectar y analizar evidencias, no solo para responder preguntas,
-            y te guiará paso a paso durante todo el proceso.
+            Las respuestas se basan en fuentes normativas verificadas (UE/BOE/autoridades), estándares reconocidos (ISO/OCDE/OIT/GRI)
+            y el corpus metodológico RECAVA, por lo que resultan idóneas para conocer tu grado de cumplimiento o el de tus proveedores.
           </p>
           <div class="mode-card__modules">
             <div class="mode-card__modules-title">Módulos del proceso</div>
@@ -543,7 +574,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const token = await getVerifiedIdTokenOrThrow();
     const url = `${baseUrl}/chat_history/recents?limit=${encodeURIComponent(limit)}`;
 
-    const { signal, cancel } = withTimeout(20000);
+    const { signal, cancel } = withTimeout(60000);
     const resp = await fetch(url, {
       method: 'GET',
       headers: {
@@ -581,7 +612,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const token = await getVerifiedIdTokenOrThrow();
     const url = `${baseUrl}/chat_history/thread/${encodeURIComponent(threadId)}`;
 
-    const { signal, cancel } = withTimeout(20000);
+    const { signal, cancel } = withTimeout(60000);
     const resp = await fetch(url, {
       method: 'GET',
       headers: {
@@ -621,7 +652,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!baseUrl) throw new Error('No se pudo determinar la URL del orquestador.');
     const token = await getVerifiedIdTokenOrThrow();
 
-    const { signal, cancel } = withTimeout(20000);
+    const { signal, cancel } = withTimeout(60000);
     const resp = await fetch(`${baseUrl}/audit_progress/${encodeURIComponent(threadId)}`, {
       method: 'GET',
       headers: {
@@ -650,7 +681,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!baseUrl) throw new Error('No se pudo determinar la URL del orquestador.');
     const token = await getVerifiedIdTokenOrThrow();
 
-    const { signal, cancel } = withTimeout(20000);
+    const { signal, cancel } = withTimeout(60000);
     const resp = await fetch(`${baseUrl}/audit_progress/${encodeURIComponent(threadId)}`, {
       method: 'POST',
       headers: {
