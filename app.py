@@ -5,6 +5,7 @@ import json
 import uuid
 import datetime
 from flask import request, jsonify, abort
+from openai import APITimeoutError
 
 # --- Configuración base y clientes externos ---
 from src.config import app, logger, client, ORCHESTRATOR_ASSISTANT_ID, ASISTENTE_ID
@@ -291,7 +292,16 @@ def chat_with_main_audit_orchestrator():
         return fail("message too long", 413)
 
     if not thread_id:
-        thread_id = client.beta.threads.create().id
+        try:
+            thread_id = client.beta.threads.create(request_timeout=60.0).id
+        except APITimeoutError as exc:
+            logger.warning("%s: timeout creando thread en OpenAI: %s", endpoint_name, exc)
+            return fail(
+                "El orquestador tardó demasiado en iniciar la conversación.",
+                status=504,
+                upstream="openai",
+                detail=str(exc),
+            )
 
     # Verifica/Registra propiedad del hilo
     ensure_thread_ownership(thread_id, decoded_user["uid"])
@@ -304,11 +314,19 @@ def chat_with_main_audit_orchestrator():
             f"{endpoint_name}: uid={decoded_user.get('uid')} email={decoded_user.get('email')} thread_id={thread_id}"
         )
 
-        client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message)
+        client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_message,
+            request_timeout=60.0,
+        )
 
         # Ejecuta orquestador
         run = client.beta.threads.runs.create_and_poll(
-            thread_id=thread_id, assistant_id=ORCHESTRATOR_ASSISTANT_ID, timeout=180.0
+            thread_id=thread_id,
+            assistant_id=ORCHESTRATOR_ASSISTANT_ID,
+            timeout=180.0,
+            request_timeout=60.0,
         )
 
         # Soporte de herramientas si requiere acción
@@ -324,7 +342,11 @@ def chat_with_main_audit_orchestrator():
 
             if tool_outputs:
                 run = client.beta.threads.runs.submit_tool_outputs_and_poll(
-                    thread_id=thread_id, run_id=run.id, tool_outputs=tool_outputs, timeout=180.0
+                    thread_id=thread_id,
+                    run_id=run.id,
+                    tool_outputs=tool_outputs,
+                    timeout=180.0,
+                    request_timeout=60.0,
                 )
 
         if run.status != "completed":
@@ -352,6 +374,23 @@ def chat_with_main_audit_orchestrator():
             }
         )
 
+    except APITimeoutError as exc:
+        logger.warning("%s: timeout esperando respuesta de OpenAI: %s", endpoint_name, exc)
+        persist_conversation_turn(
+            thread_id,
+            user_message,
+            "API Timeout: OpenAI no respondió a tiempo.",
+            endpoint_name,
+            run_id=getattr(run, "id", None),
+            assistant_name="Timeout",
+            **persistence_metadata,
+        )
+        return fail(
+            "El orquestador no respondió a tiempo. Inténtalo de nuevo en unos segundos.",
+            status=504,
+            upstream="openai",
+            detail=str(exc),
+        )
     except Exception as e:
         logger.error(f"{endpoint_name}: error: {e}", exc_info=True)
         persist_conversation_turn(
@@ -384,7 +423,16 @@ def chat_with_sustainability_expert():
         return fail("message too long", 413)
 
     if not thread_id:
-        thread_id = client.beta.threads.create().id
+        try:
+            thread_id = client.beta.threads.create(request_timeout=60.0).id
+        except APITimeoutError as exc:
+            logger.warning("%s: timeout creando thread en OpenAI: %s", endpoint_name, exc)
+            return fail(
+                "El asistente tardó demasiado en iniciar la conversación.",
+                status=504,
+                upstream="openai",
+                detail=str(exc),
+            )
 
     ensure_thread_ownership(thread_id, decoded_user["uid"])
 
@@ -396,10 +444,18 @@ def chat_with_sustainability_expert():
             f"{endpoint_name}: uid={decoded_user.get('uid')} email={decoded_user.get('email')} thread_id={thread_id}"
         )
 
-        client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message)
+        client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_message,
+            request_timeout=60.0,
+        )
 
         run = client.beta.threads.runs.create_and_poll(
-            thread_id=thread_id, assistant_id=ASISTENTE_ID, timeout=180.0
+            thread_id=thread_id,
+            assistant_id=ASISTENTE_ID,
+            timeout=180.0,
+            request_timeout=60.0,
         )
 
         if run.status != "completed":
@@ -427,6 +483,23 @@ def chat_with_sustainability_expert():
             }
         )
 
+    except APITimeoutError as exc:
+        logger.warning("%s: timeout esperando respuesta de OpenAI: %s", endpoint_name, exc)
+        persist_conversation_turn(
+            thread_id,
+            user_message,
+            "API Timeout: OpenAI no respondió a tiempo.",
+            endpoint_name,
+            run_id=getattr(run, "id", None),
+            assistant_name="Timeout",
+            **persistence_metadata,
+        )
+        return fail(
+            "El asistente no respondió a tiempo. Inténtalo de nuevo en unos segundos.",
+            status=504,
+            upstream="openai",
+            detail=str(exc),
+        )
     except Exception as e:
         logger.error(f"{endpoint_name}: error: {e}", exc_info=True)
         persist_conversation_turn(

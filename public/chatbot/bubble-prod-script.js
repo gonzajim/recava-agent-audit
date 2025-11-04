@@ -574,7 +574,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const token = await getVerifiedIdTokenOrThrow();
     const url = `${baseUrl}/chat_history/recents?limit=${encodeURIComponent(limit)}`;
 
-    const { signal, cancel } = withTimeout(60000);
+    const { signal, cancel } = withTimeout(90000);
     const resp = await fetch(url, {
       method: 'GET',
       headers: {
@@ -612,7 +612,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const token = await getVerifiedIdTokenOrThrow();
     const url = `${baseUrl}/chat_history/thread/${encodeURIComponent(threadId)}`;
 
-    const { signal, cancel } = withTimeout(60000);
+    const { signal, cancel } = withTimeout(90000);
     const resp = await fetch(url, {
       method: 'GET',
       headers: {
@@ -652,7 +652,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!baseUrl) throw new Error('No se pudo determinar la URL del orquestador.');
     const token = await getVerifiedIdTokenOrThrow();
 
-    const { signal, cancel } = withTimeout(60000);
+    const { signal, cancel } = withTimeout(90000);
     const resp = await fetch(`${baseUrl}/audit_progress/${encodeURIComponent(threadId)}`, {
       method: 'GET',
       headers: {
@@ -681,7 +681,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!baseUrl) throw new Error('No se pudo determinar la URL del orquestador.');
     const token = await getVerifiedIdTokenOrThrow();
 
-    const { signal, cancel } = withTimeout(60000);
+    const { signal, cancel } = withTimeout(90000);
     const resp = await fetch(`${baseUrl}/audit_progress/${encodeURIComponent(threadId)}`, {
       method: 'POST',
       headers: {
@@ -1168,7 +1168,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const endpointUrl = currentChatMode === 'auditor' ? currentEndpoints.auditor : currentEndpoints.advisor;
 
     try {
-      const { signal, cancel } = withTimeout(30000);
+      const { signal, cancel } = withTimeout(90000);
       const resp = await fetch(endpointUrl, {
         method:'POST',
         headers:{
