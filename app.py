@@ -292,7 +292,6 @@ def chat_with_main_audit_orchestrator():
         return fail("message too long", 413)
 
     endpoint_name = "/chat_auditor"
-    endpoint_name = "/chat_assistant"
     openai_client = client.with_options(timeout=60.0)
 
     if not thread_id:
@@ -422,6 +421,7 @@ def chat_with_sustainability_expert():
     if len(user_message) > 4000:
         return fail("message too long", 413)
 
+    endpoint_name = "/chat_assistant"
     openai_client = client.with_options(timeout=60.0)
 
     if not thread_id:
