@@ -291,9 +291,13 @@ def chat_with_main_audit_orchestrator():
     if len(user_message) > 4000:
         return fail("message too long", 413)
 
+    endpoint_name = "/chat_auditor"
+    endpoint_name = "/chat_assistant"
+    openai_client = client.with_options(timeout=60.0)
+
     if not thread_id:
         try:
-            thread_id = client.beta.threads.create(request_timeout=60.0).id
+            thread_id = openai_client.beta.threads.create().id
         except APITimeoutError as exc:
             logger.warning("%s: timeout creando thread en OpenAI: %s", endpoint_name, exc)
             return fail(
@@ -306,7 +310,6 @@ def chat_with_main_audit_orchestrator():
     # Verifica/Registra propiedad del hilo
     ensure_thread_ownership(thread_id, decoded_user["uid"])
 
-    endpoint_name = "/chat_auditor"
     run = None
 
     try:
@@ -314,19 +317,17 @@ def chat_with_main_audit_orchestrator():
             f"{endpoint_name}: uid={decoded_user.get('uid')} email={decoded_user.get('email')} thread_id={thread_id}"
         )
 
-        client.beta.threads.messages.create(
+        openai_client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
             content=user_message,
-            request_timeout=60.0,
         )
 
         # Ejecuta orquestador
-        run = client.beta.threads.runs.create_and_poll(
+        run = openai_client.beta.threads.runs.create_and_poll(
             thread_id=thread_id,
             assistant_id=ORCHESTRATOR_ASSISTANT_ID,
             timeout=180.0,
-            request_timeout=60.0,
         )
 
         # Soporte de herramientas si requiere acción
@@ -341,18 +342,17 @@ def chat_with_main_audit_orchestrator():
                     tool_outputs.append({"tool_call_id": tc.id, "output": output})
 
             if tool_outputs:
-                run = client.beta.threads.runs.submit_tool_outputs_and_poll(
+                run = openai_client.beta.threads.runs.submit_tool_outputs_and_poll(
                     thread_id=thread_id,
                     run_id=run.id,
                     tool_outputs=tool_outputs,
                     timeout=180.0,
-                    request_timeout=60.0,
                 )
 
         if run.status != "completed":
             raise Exception(f"Run ended with status={run.status}. Details: {getattr(run, 'last_error', None)}")
 
-        messages = client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id, order="desc")
+        messages = openai_client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id, order="desc")
         response_text = process_assistant_message_without_citations(messages.data, run.id, endpoint_name)
 
         persist_conversation_turn(
@@ -422,9 +422,11 @@ def chat_with_sustainability_expert():
     if len(user_message) > 4000:
         return fail("message too long", 413)
 
+    openai_client = client.with_options(timeout=60.0)
+
     if not thread_id:
         try:
-            thread_id = client.beta.threads.create(request_timeout=60.0).id
+            thread_id = openai_client.beta.threads.create().id
         except APITimeoutError as exc:
             logger.warning("%s: timeout creando thread en OpenAI: %s", endpoint_name, exc)
             return fail(
@@ -436,7 +438,6 @@ def chat_with_sustainability_expert():
 
     ensure_thread_ownership(thread_id, decoded_user["uid"])
 
-    endpoint_name = "/chat_assistant"
     run = None
 
     try:
@@ -444,24 +445,22 @@ def chat_with_sustainability_expert():
             f"{endpoint_name}: uid={decoded_user.get('uid')} email={decoded_user.get('email')} thread_id={thread_id}"
         )
 
-        client.beta.threads.messages.create(
+        openai_client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
             content=user_message,
-            request_timeout=60.0,
         )
 
-        run = client.beta.threads.runs.create_and_poll(
+        run = openai_client.beta.threads.runs.create_and_poll(
             thread_id=thread_id,
             assistant_id=ASISTENTE_ID,
             timeout=180.0,
-            request_timeout=60.0,
         )
 
         if run.status != "completed":
             raise Exception(f"Run ended with status={run.status}. Details: {getattr(run, 'last_error', None)}")
 
-        messages = client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id, order="desc")
+        messages = openai_client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id, order="desc")
         response_text = process_assistant_message_without_citations(messages.data, run.id, endpoint_name)
 
         persist_conversation_turn(
