@@ -4,9 +4,9 @@ import logging
 import openai
 from flask import Flask
 from flask_cors import CORS
-from google.cloud import firestore
-from google.cloud import bigquery  # <-- NUEVO: Importación para BigQuery
+from google.cloud import bigquery
 from packaging import version
+from httpx import Timeout
 
 # --- 1. Inicialización de Flask y CORS ---
 app = Flask(__name__)
@@ -56,16 +56,12 @@ try:
     # Cliente de OpenAI
     client = openai.OpenAI(
         api_key=OPENAI_API_KEY,
-        timeout=30.0,
-        max_retries=2
+        timeout=Timeout(60.0, read=60.0, write=60.0, connect=10.0),
+        max_retries=3,
     )
     logger.info("OpenAI client initialized.")
 
-    # Cliente de Firestore
-    db = firestore.Client()
-    logger.info("Firestore client initialized.")
-
-    # <-- NUEVO: Cliente de BigQuery ---
+    # Cliente de BigQuery
     bq_client = bigquery.Client()
     logger.info("BigQuery client initialized.")
 

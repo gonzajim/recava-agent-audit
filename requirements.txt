@@ -3,6 +3,7 @@
 # --- Framework Web y Servidor ---
 Flask
 Flask-Cors
+Flask-Limiter
 gunicorn
 
 # --- Cliente de OpenAI ---
@@ -12,7 +13,7 @@ packaging
 # --- Utilidades ---
 python-dotenv
 httpx
+firebase-admin
 
 # --- Clientes de Google Cloud ---
-google-cloud-firestore
-google-cloud-bigquery  # <-- NUEVA LIBRERÍA
+google-cloud-bigquery
