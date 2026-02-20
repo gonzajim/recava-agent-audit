@@ -1,8 +1,38 @@
-# entorno virtual
+# ---------- Python ----------
 .venv/
 venv/
-# variables de entorno
-.env
-# archivos temporales y caches
 __pycache__/
 *.py[cod]
+*.egg-info/
+dist/
+.pytest_cache/
+
+# ---------- Variables de entorno ----------
+.env
+.env.local
+.env.*.local
+# Los .env.development/.env.production del frontend sí se versiona (no contienen secretos)
+# Añadir aquí si alguna vez se mueven secretos a esos archivos
+
+# ---------- Archivos temporales / artefactos ----------
+bubble_tmp.bin
+temp.js
+firestore-debug.log
+*.log
+
+# ---------- Firebase ----------
+.firebase/
+firebase-debug.log
+
+# ---------- Node / Frontend ----------
+node_modules/
+public/admin-panel/build/
+public/chatbot/build/
+
+# ---------- IDE / OS ----------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.suo
+*.user

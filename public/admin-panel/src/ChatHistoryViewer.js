@@ -13,9 +13,9 @@ import {
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search'; // Icono de búsqueda
 
-// URLs de nuestras funciones HTTP
-const GET_HISTORY_URL = "https://europe-west1-recava-auditor-dev.cloudfunctions.net/getChatHistory";
-const UPDATE_RESPONSE_URL = "https://europe-west1-recava-auditor-dev.cloudfunctions.net/updateExpertResponse";
+// URLs de las funciones HTTP — configuradas por entorno via .env.development / .env.production
+const GET_HISTORY_URL = process.env.REACT_APP_GET_HISTORY_URL;
+const UPDATE_RESPONSE_URL = process.env.REACT_APP_UPDATE_RESPONSE_URL;
 
 // Estilo para la ventana Modal de MUI
 const modalStyle = {
@@ -68,16 +68,19 @@ function ChatHistoryViewer() {
     }
   };
 
+  // P1-fix: usar onAuthStateChanged en lugar de auth.currentUser como dependencia.
+  // auth.currentUser es un objeto mutable externo a React que no dispara re-renders.
   useEffect(() => {
-    if (auth.currentUser) {
-      fetchHistory(); // Carga inicial sin filtro
-    }
-  }, [auth.currentUser]);
+    const unsubscribe = auth.onAuthStateChanged(user => {
+      if (user) fetchHistory();
+    });
+    return () => unsubscribe(); // cleanup al desmontar el componente
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSearch = () => {
     fetchHistory(searchTerm);
   };
-  
+
   const handleEditClick = (item) => {
     setEditingItem(item);
     setExpertResponse(item.expert_response || '');
@@ -88,11 +91,18 @@ function ChatHistoryViewer() {
     setLoading(true);
     try {
       const token = await getAuthToken();
-      await fetch(UPDATE_RESPONSE_URL, {
+      const response = await fetch(UPDATE_RESPONSE_URL, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ data: { id: editingItem.id, expertResponse: expertResponse } })
       });
+
+      // P1-fix: validar que el servidor respondió correctamente ANTES de actualizar el estado
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: `Error del servidor: ${response.status}` }));
+        throw new Error(errorData.error || `Error del servidor: ${response.status}`);
+      }
+
       setHistory(history.map(item =>
         item.id === editingItem.id ? { ...item, expert_response: expertResponse } : item
       ));
@@ -158,7 +168,7 @@ function ChatHistoryViewer() {
           Buscar
         </Button>
       </Paper>
-      
+
       {loading ? (
         <Box display="flex" justifyContent="center" p={8}><CircularProgress /></Box>
       ) : (
@@ -180,10 +190,10 @@ function ChatHistoryViewer() {
                     {item.user_message}
                   </TableCell>
                   <TableCell>
-                    <Box dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(item.expert_response) }} sx={{ 
-                      maxHeight: 60, 
-                      overflow: 'hidden', 
-                      '& *': { margin: 0, padding: 0 } 
+                    <Box dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(item.expert_response) }} sx={{
+                      maxHeight: 60,
+                      overflow: 'hidden',
+                      '& *': { margin: 0, padding: 0 }
                     }} />
                   </TableCell>
                   <TableCell align="right">

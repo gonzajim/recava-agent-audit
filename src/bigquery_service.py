@@ -26,7 +26,8 @@ def insert_chat_turn_to_bigquery(
     """Inserta una fila en la tabla de historial de chat de BigQuery."""
 
     row = {
-        "timestamp": datetime.datetime.utcnow().isoformat(),
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+
         "thread_id": thread_id,
         "user_message": user_message,
         "assistant_response": assistant_response,

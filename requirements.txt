@@ -1,19 +1,21 @@
 # requirements.txt
+# Versiones fijadas para garantizar builds reproducibles.
+# Para actualizar: revisar changelogs y ejecutar pip-compile o actualizar manualmente.
 
 # --- Framework Web y Servidor ---
-Flask
-Flask-Cors
-Flask-Limiter
-gunicorn
+Flask==3.1.0
+Flask-Cors==5.0.1
+Flask-Limiter==3.9.0
+gunicorn==23.0.0
 
 # --- Cliente de OpenAI ---
-openai
-packaging
+openai==1.58.1
+packaging==24.2
 
 # --- Utilidades ---
-python-dotenv
-httpx
-firebase-admin
+python-dotenv==1.0.1
+httpx==0.28.1
+firebase-admin==6.6.0
 
 # --- Clientes de Google Cloud ---
-google-cloud-bigquery
+google-cloud-bigquery==3.27.0
