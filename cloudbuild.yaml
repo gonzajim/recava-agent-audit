@@ -29,10 +29,11 @@ steps:
       - '8080'
       - '--project'
       - '${PROJECT_ID}'
-      - '--update-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest,ORCHESTRATOR_ASSISTANT_ID=ORCHESTRATOR_ASSISTANT_ID:latest,ASISTENTE_ID=ASISTENTE_ID:latest,AUDITOR_ID=AUDITOR_ID:latest,BIGQUERY_DATASET_ID=BIGQUERY_DATASET_ID:latest,BIGQUERY_TABLE_ID=BIGQUERY_TABLE_ID:latest'
+      - '--env-vars-file'
+      - 'env.yaml'
       - '--timeout=300s'
       - '--concurrency=80'
-      - '--cpu=1'
+      - '--cpu=0.5'
       - '--memory=512Mi'
 
   # -------------------------------------------------------------------------------------
@@ -79,7 +80,7 @@ steps:
 # Definición de las variables con valores POR DEFECTO para el entorno de producción.
 # =====================================================================================
 substitutions:
-  _SERVICE_NAME: 'orchestrator'
+  _SERVICE_NAME: 'recava-buscador'
   _FIREBASE_PROJECT_ALIAS: 'prod'
 
 options:

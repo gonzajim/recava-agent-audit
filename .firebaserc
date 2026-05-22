@@ -1,29 +1,17 @@
 {
   "projects": {
-    "prod": "recava-auditor",
-    "dev": "recava-auditor-dev",
-    "default": "recava-auditor-dev"
+    "prod": "recava-buscador",
+    "dev": "recava-buscador",
+    "default": "recava-buscador"
   },
   "targets": {
-    "recava-auditor-dev": {
+    "recava-buscador": {
       "hosting": {
-        "chatbot": [
-          "recava-auditor-dev"
-        ],
         "admin-panel": [
-          "recava-auditor-dev-panel"
-        ]
-      }
-    },
-    "recava-auditor": {
-      "hosting": {
-        "chatbot": [
-          "recava-auditor"
-        ],
-        "admin-panel": [
-          "recava-auditor-panel"
+          "recava-buscador"
         ]
       }
     }
-  }
+  },
+  "etags": {}
 }

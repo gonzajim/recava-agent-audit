@@ -2,10 +2,10 @@ document.addEventListener('DOMContentLoaded', function () {
   // ===================== 1) FIREBASE =====================
   const firebaseConfig = {
     apiKey: "AIzaSyAAlSxno1oBOtyhh7ntS2mv8rkAnWeAzmM",
-    authDomain: "recava-auditor-dev.firebaseapp.com",
-    projectId: "recava-auditor-dev",
+    authDomain: "recava-buscador.firebaseapp.com",
+    projectId: "recava-buscador",
     // FIX: bucket estándar de Firebase Storage
-    storageBucket: "recava-auditor-dev.appspot.com",
+    storageBucket: "recava-buscador.appspot.com",
     messagingSenderId: "370417116045",
     appId: "1:370417116045:web:41c77969d5d880382d93c4",
     measurementId: "G-2J8TTR4SD2"
@@ -42,7 +42,7 @@ document.addEventListener('DOMContentLoaded', function () {
       const initResp = await fetch('/__/firebase/init.json');
       if (!initResp.ok) throw new Error(`init.json ${initResp.status}`);
       const cfg = await initResp.json().catch(() => null);
-      currentEndpoints = (cfg?.projectId === 'recava-auditor') ? endpoints.prod : endpoints.dev;
+      currentEndpoints = (cfg?.projectId === 'recava-buscador') ? endpoints.prod : endpoints.dev;
     } catch (_e) {
       currentEndpoints = endpoints.dev;
     }

@@ -1,16 +1,22 @@
 # config.py
 import os
 import logging
-import openai
-from flask import Flask
-from flask_cors import CORS
-from google.cloud import bigquery
-from packaging import version
-from httpx import Timeout
+from dotenv import load_dotenv
+load_dotenv()
 
-# --- 1. Inicialización de Flask y CORS ---
+import google.generativeai as genai
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+from flask import Flask
+
+from packaging import version
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+# --- 1. Inicialización de Flask ---
+# Nota: CORS se configura en app.py con orígenes restringidos; NO inicializar aquí.
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True, methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], allow_headers=["Content-Type", "Authorization", "X-Requested-With"])
+
 
 # --- 2. Configuración Centralizada de Logging ---
 logger = logging.getLogger(__name__)
@@ -26,44 +32,33 @@ if not logger.handlers:
 logger.info("Application configuration starting...")
 
 # --- 3. Carga y Validación de Variables de Entorno ---
-# Variables de OpenAI
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-ORCHESTRATOR_ASSISTANT_ID = os.getenv("ORCHESTRATOR_ASSISTANT_ID")
-ASISTENTE_ID = os.getenv("ASISTENTE_ID")
-
-if not OPENAI_API_KEY:
-    logger.critical("Missing OPENAI_API_KEY environment variable.")
-    raise ValueError("Missing OPENAI_API_KEY environment variable.")
-if not ORCHESTRATOR_ASSISTANT_ID:
-    logger.critical("Missing ORCHESTRATOR_ASSISTANT_ID environment variable.")
-    raise ValueError("Missing ORCHESTRATOR_ASSISTANT_ID environment variable.")
-if not ASISTENTE_ID:
-    logger.critical("Missing ASISTENTE_ID environment variable.")
-    raise ValueError("Missing ASISTENTE_ID environment variable.")
-
-# <-- NUEVO: Variables de Entorno para BigQuery ---
-BIGQUERY_DATASET_ID = os.getenv("BIGQUERY_DATASET_ID")
-BIGQUERY_TABLE_ID = os.getenv("BIGQUERY_TABLE_ID")
-
-if not all([BIGQUERY_DATASET_ID, BIGQUERY_TABLE_ID]):
-    logger.critical("Missing BigQuery environment variables (BIGQUERY_DATASET_ID, BIGQUERY_TABLE_ID).")
-    raise ValueError("Missing BigQuery environment variables.")
-
-logger.info("All environment variables loaded successfully.")
+logger.info("Environment configuration checked.")
 
 # --- 4. Inicialización de Clientes Externos ---
 try:
-    # Cliente de OpenAI
-    client = openai.OpenAI(
-        api_key=OPENAI_API_KEY,
-        timeout=Timeout(60.0, read=60.0, write=60.0, connect=10.0),
-        max_retries=3,
-    )
-    logger.info("OpenAI client initialized.")
-
-    # Cliente de BigQuery
-    bq_client = bigquery.Client()
-    logger.info("BigQuery client initialized.")
+    # --- Inicialización de Firebase Admin ---
+    if not firebase_admin._apps:
+        if os.getenv("FIREBASE_AUTH_EMULATOR_HOST"):
+            firebase_admin.initialize_app()
+        else:
+            cred_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+            if cred_path and os.path.exists(cred_path):
+                cred = credentials.Certificate(cred_path)
+                firebase_admin.initialize_app(cred)
+            else:
+                logger.info("Firebase Admin: using application default credentials.")
+                if cred_path:
+                    # Remove it from env so firebase_admin doesn't crash trying to load a non-existent path
+                    del os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
+                # Intentamos usar ADC
+                firebase_project = os.getenv("FIREBASE_PROJECT_ID")
+                if firebase_project:
+                    firebase_admin.initialize_app(options={'projectId': firebase_project})
+                else:
+                    firebase_admin.initialize_app()
+    
+    firestore_db = firestore.client()
+    logger.info("Firestore client initialized.")
 
 except Exception as e:
     logger.critical(f"Failed to initialize external clients: {e}", exc_info=True)

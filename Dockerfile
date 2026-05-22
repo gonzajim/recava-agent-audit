@@ -23,6 +23,8 @@ COPY requirements.txt requirements.txt
 RUN python3 -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
+# No se requieren modelos locales de ML ya que usamos RAG serverless (Gemini embeddings)
+
 # ---- Final Stage ----
 FROM python:3.10-slim
 
@@ -47,6 +49,8 @@ COPY --from=builder --chown=appuser:appgroup /opt/venv /opt/venv
 
 WORKDIR /app
 
+# No se requiere copiar caché de modelos de embeddings local
+
 # ========================================================================
 # --- CORRECCIÓN ---
 # Copiamos app.py desde la raíz.
@@ -64,4 +68,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
 # Comando para ejecutar la aplicación
-CMD ["sh", "-c", "/opt/venv/bin/gunicorn app:app --bind \"0.0.0.0:${PORT}\" --workers 4 --timeout 120 --access-logfile - --error-logfile -"]
+CMD ["sh", "-c", "/opt/venv/bin/gunicorn app:app --bind \"0.0.0.0:${PORT}\" --workers 4 --threads 8 --timeout 120 --access-logfile - --error-logfile -"]

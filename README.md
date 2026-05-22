@@ -1,6 +1,5 @@
-# recava-agent-audit
-Orquestador en GCP + OpenAI Responses API & Agents SDK
-ReCaVa - Arquitectura cloud multiagente para proceso auditoría.
+# recava-buscador
+ReCaVa Buscador - Arquitectura cloud multiagente para proceso auditoría.
 
 Los usuarios pueden interactuar con el sistema de agentes de dos modos principales:
 a través de una interfaz web embebida (widget o iframe) en un sitio web
