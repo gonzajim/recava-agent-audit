@@ -80,7 +80,7 @@ steps:
 # Definición de las variables con valores POR DEFECTO para el entorno de producción.
 # =====================================================================================
 substitutions:
-  _SERVICE_NAME: 'recava-buscador'
+  _SERVICE_NAME: 'recava-auditor-prod'
   _FIREBASE_PROJECT_ALIAS: 'prod'
 
 options:

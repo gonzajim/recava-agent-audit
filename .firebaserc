@@ -1,14 +1,14 @@
 {
   "projects": {
-    "prod": "recava-buscador",
-    "dev": "recava-buscador",
-    "default": "recava-buscador"
+    "prod": "recava-auditor-prod",
+    "dev": "recava-auditor-prod",
+    "default": "recava-auditor-prod"
   },
   "targets": {
-    "recava-buscador": {
+    "recava-auditor-prod": {
       "hosting": {
         "admin-panel": [
-          "recava-buscador"
+          "recava-auditor-prod"
         ]
       }
     }
