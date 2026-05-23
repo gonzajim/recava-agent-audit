@@ -110,20 +110,29 @@ def _save_turn(thread_id: str, user_text: str, assistant_text: str, endpoint_sou
 
 # ── Generación de Respuesta Gemini ────────────────────────────────────────────
 
-def _call_gemini(system_prompt: str, history: list[dict], user_message: str, rag_context: str = "") -> str:
+def _call_gemini(system_prompt: str, history: list[dict], user_message: str, rag_context: str = "", gemini_file=None) -> str:
     """Construye el prompt con el contexto RAG y genera la respuesta con Gemini."""
     enriched_system = system_prompt
     if rag_context:
         enriched_system += f"\n\n[CORPUS LEGAL DE REFERENCIA]\n{rag_context}"
 
     try:
+        model_name = "gemini-2.5-pro" if gemini_file else "gemini-1.5-flash"
         model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
+            model_name=model_name,
             generation_config=genai.GenerationConfig(temperature=0.2),
             system_instruction=enriched_system,
         )
         chat = model.start_chat(history=history)
-        response = chat.send_message(user_message)
+        
+        if gemini_file:
+            if not user_message:
+                user_message = "Analiza el fichero adjunto e indícame su contenido y cómo me puedes ayudar con él en el contexto de sostenibilidad."
+            contents = [gemini_file, user_message]
+            response = chat.send_message(contents)
+        else:
+            response = chat.send_message(user_message)
+            
         return response.text.strip()
     except Exception as e:
         logger.error(f"Error en llamada Gemini: {e}", exc_info=True)
@@ -132,7 +141,7 @@ def _call_gemini(system_prompt: str, history: list[dict], user_message: str, rag
 
 # ── API Pública del Servicio ──────────────────────────────────────────────────
 
-def handle_chat_auditor(user_message: str, thread_id: str | None, uid: str) -> dict:
+def handle_chat_auditor(user_message: str, thread_id: str | None, uid: str, gemini_file=None) -> dict:
     """
     Gestiona un turno del Modo Auditor.
     Crea el hilo si no existe, carga el historial, llama a Gemini y persiste.
@@ -144,8 +153,10 @@ def handle_chat_auditor(user_message: str, thread_id: str | None, uid: str) -> d
 
     history = _load_history(thread_id)
     rag_context = retrieve_context(user_message, top_k=3)
-    response_text = _call_gemini(AUDITOR_SYSTEM_PROMPT, history, user_message, rag_context)
-    _save_turn(thread_id, user_message, response_text, endpoint_source, uid)
+    response_text = _call_gemini(AUDITOR_SYSTEM_PROMPT, history, user_message, rag_context, gemini_file=gemini_file)
+    
+    user_message_for_history = f"[Fichero adjunto] {user_message}" if gemini_file else user_message
+    _save_turn(thread_id, user_message_for_history, response_text, endpoint_source, uid)
 
     return {
         "response": response_text,
@@ -154,7 +165,7 @@ def handle_chat_auditor(user_message: str, thread_id: str | None, uid: str) -> d
     }
 
 
-def handle_chat_advisor(user_message: str, thread_id: str | None, uid: str) -> dict:
+def handle_chat_advisor(user_message: str, thread_id: str | None, uid: str, gemini_file=None) -> dict:
     """
     Gestiona un turno del Modo Asesor.
     Crea el hilo si no existe, carga el historial, llama a Gemini y persiste.
@@ -166,8 +177,10 @@ def handle_chat_advisor(user_message: str, thread_id: str | None, uid: str) -> d
 
     history = _load_history(thread_id)
     rag_context = retrieve_context(user_message, top_k=5)
-    response_text = _call_gemini(ADVISOR_SYSTEM_PROMPT, history, user_message, rag_context)
-    _save_turn(thread_id, user_message, response_text, endpoint_source, uid)
+    response_text = _call_gemini(ADVISOR_SYSTEM_PROMPT, history, user_message, rag_context, gemini_file=gemini_file)
+    
+    user_message_for_history = f"[Fichero adjunto] {user_message}" if gemini_file else user_message
+    _save_turn(thread_id, user_message_for_history, response_text, endpoint_source, uid)
 
     return {
         "response": response_text,

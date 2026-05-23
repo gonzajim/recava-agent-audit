@@ -97,6 +97,9 @@ document.addEventListener('DOMContentLoaded', function () {
   const userInputEl = document.getElementById('user-input');
   const sendButtonEl = document.getElementById('send-button');
   const attachFileButtonEl = document.getElementById('attach-file-button');
+  const fileInputEl = document.getElementById('file-input');
+  
+  let selectedFile = null;
 
   // Accesibilidad log
   if (chatMessagesEl) { chatMessagesEl.setAttribute('aria-live','polite'); chatMessagesEl.setAttribute('role','log'); }
@@ -1136,7 +1139,7 @@ document.addEventListener('DOMContentLoaded', function () {
   // ===================== 9) ENVÍO MENSAJES =====================
   async function handleSendMessageToServer() {
     const messageText = userInputEl.value.trim();
-    if (!messageText) return;
+    if (!messageText && !selectedFile) return;
 
     if (!currentChatMode) {
       addSystemMessageToChat("Elige primero <strong>Modo Asesor</strong> o <strong>Modo Auditor</strong>.");
@@ -1156,30 +1159,68 @@ document.addEventListener('DOMContentLoaded', function () {
       return;
     }
 
+    const displayedMessage = selectedFile ? `[Fichero adjunto: ${selectedFile.name}] ${messageText}` : messageText;
     currentConversationMessages.push({
       role: 'user',
-      text: messageText,
+      text: displayedMessage,
       timestamp: new Date().toISOString(),
     });
-    addUserMessageToChat(messageText);
+    addUserMessageToChat(displayedMessage);
     userInputEl.value = ''; adjustUserInputHeight();
-    showTypingIndicatorToChat();
 
     const endpointUrl = currentChatMode === 'auditor' ? currentEndpoints.auditor : currentEndpoints.advisor;
 
+    // UX Dinámico si hay archivo
+    let loadingInterval = null;
+    if (selectedFile) {
+      showTypingIndicatorToChat("Recibido. Estoy leyendo y analizando detenidamente el documento...");
+      const messages = [
+        "Extrayendo el contexto del documento...",
+        "Consultando la base normativa aplicable...",
+        "Cruzando información con estándares de sostenibilidad...",
+        "Elaborando una respuesta experta..."
+      ];
+      let msgIdx = 0;
+      loadingInterval = setInterval(() => {
+        updateTypingIndicatorText(messages[msgIdx % messages.length]);
+        msgIdx++;
+      }, 5000);
+    } else {
+      showTypingIndicatorToChat();
+    }
+
     try {
       const { signal, cancel } = withTimeout(90000);
-      const resp = await fetch(endpointUrl, {
-        method:'POST',
-        headers:{
-          'Content-Type':'application/json',
-          'Authorization':`Bearer ${token}`,
+      let fetchOptions = {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
           'Idempotency-Key': idempotencyKey()
         },
-        signal,
-        body: JSON.stringify({ message: messageText, thread_id: currentChatThreadId })
-      });
+        signal
+      };
+
+      if (selectedFile) {
+        const formData = new FormData();
+        formData.append('message', messageText);
+        formData.append('thread_id', currentChatThreadId || '');
+        formData.append('file', selectedFile);
+        fetchOptions.body = formData;
+        // Limpiamos el adjunto de la UI inmediatamente después de empaquetarlo
+        selectedFile = null;
+        if(attachFileButtonEl) {
+          attachFileButtonEl.style.color = '';
+          attachFileButtonEl.title = 'Adjuntar archivo';
+        }
+        if(fileInputEl) fileInputEl.value = '';
+      } else {
+        fetchOptions.headers['Content-Type'] = 'application/json';
+        fetchOptions.body = JSON.stringify({ message: messageText, thread_id: currentChatThreadId });
+      }
+
+      const resp = await fetch(endpointUrl, fetchOptions);
       cancel();
+      if (loadingInterval) clearInterval(loadingInterval);
       removeTypingIndicatorFromChat();
       if (!resp.ok) {
         const err = await resp.json().catch(()=>({error:"Error de red", details:`Status ${resp.status}`}));
@@ -1251,13 +1292,16 @@ document.addEventListener('DOMContentLoaded', function () {
   userInputEl?.addEventListener('input', debounce(adjustUserInputHeight, 60)); adjustUserInputHeight();
 
   let typingIndicatorDiv=null;
-  function showTypingIndicatorToChat(){
+  function showTypingIndicatorToChat(initialText = "Generando una respuesta..."){
     if(typingIndicatorDiv) return;
     typingIndicatorDiv=document.createElement('div');
     typingIndicatorDiv.classList.add('message','assistant-message','typing-indicator');
-    typingIndicatorDiv.textContent="Generando una respuesta...";
+    typingIndicatorDiv.textContent=initialText;
     chatMessagesEl.appendChild(typingIndicatorDiv);
     scrollChatToBottom({ behavior: 'smooth' });
+  }
+  function updateTypingIndicatorText(text) {
+    if(typingIndicatorDiv) typingIndicatorDiv.textContent = text;
   }
   function removeTypingIndicatorFromChat(){ if(typingIndicatorDiv){ typingIndicatorDiv.remove(); typingIndicatorDiv=null; } }
 
@@ -1285,7 +1329,18 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
-  attachFileButtonEl?.addEventListener('click', ()=> addSystemMessageToChat("La funcionalidad de adjuntar archivos se gestiona automáticamente por el asistente."));
+  if (attachFileButtonEl && fileInputEl) {
+    attachFileButtonEl.addEventListener('click', () => {
+      fileInputEl.click();
+    });
+    fileInputEl.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        selectedFile = e.target.files[0];
+        attachFileButtonEl.style.color = "var(--uclm-rojo-principal)";
+        attachFileButtonEl.title = `Adjunto: ${selectedFile.name}`;
+      }
+    });
+  }
   sendButtonEl?.addEventListener('click', handleSendMessageToServer);
   userInputEl?.addEventListener('keypress', (e)=> {
     if (e.key === 'Enter' && !e.shiftKey && !sendButtonEl.disabled) { e.preventDefault(); handleSendMessageToServer(); }
@@ -1305,6 +1360,9 @@ document.addEventListener('DOMContentLoaded', function () {
     sendButtonEl.disabled = true;
     attachFileButtonEl.disabled = true;
     userInputEl.value = '';
+    selectedFile = null;
+    if(attachFileButtonEl) { attachFileButtonEl.style.color = ''; attachFileButtonEl.title = 'Adjuntar archivo'; }
+    if(fileInputEl) fileInputEl.value = '';
     userInputEl.placeholder = 'Selecciona un modo para comenzar...';
     setHistoryStatusMessage('', false);
     initializeSelectionLayout();

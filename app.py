@@ -155,6 +155,59 @@ def _iso_utc(ts):
 # 4) Endpoints de Chat (Modo Auditor y Modo Asesor) – Restaurados con Gemini
 # =============================================================================
 
+import shutil
+import google.generativeai as genai
+
+def _process_chat_request(request, handle_fn):
+    decoded_user = require_firebase_user_or_403()
+    uid = decoded_user.get("uid")
+    
+    if request.content_type and request.content_type.startswith("multipart/form-data"):
+        data = request.form
+        file = request.files.get("file")
+    else:
+        data = request.get_json(silent=True) or {}
+        file = None
+        
+    user_message = data.get("message", "").strip()
+    thread_id = data.get("thread_id")
+
+    if not user_message and not file:
+        return fail("El campo 'message' o un archivo adjunto son obligatorios.", status=400)
+
+    gemini_file = None
+    temp_dir = None
+    try:
+        if file and file.filename != "":
+            temp_dir = tempfile.mkdtemp()
+            filename = werkzeug.utils.secure_filename(file.filename) or "document.pdf"
+            file_path = os.path.join(temp_dir, filename)
+            file.save(file_path)
+            
+            logger.info(f"Uploading {filename} to Gemini API...")
+            gemini_file = genai.upload_file(file_path)
+            
+            while gemini_file.state.name == "PROCESSING":
+                time.sleep(2)
+                gemini_file = genai.get_file(gemini_file.name)
+                
+            if gemini_file.state.name == "FAILED":
+                raise Exception("Gemini file processing failed")
+                
+        result = handle_fn(user_message, thread_id, uid, gemini_file=gemini_file)
+        return ok(result)
+    except Exception as e:
+        logger.error(f"Chat endpoint error: {e}", exc_info=True)
+        return fail(f"Error interno del servidor: {str(e)}", status=500)
+    finally:
+        if temp_dir and os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        if gemini_file:
+            try:
+                genai.delete_file(gemini_file.name)
+            except Exception as e:
+                logger.warning(f"Could not delete Gemini file {gemini_file.name}: {e}")
+
 @app.route("/chat_auditor", methods=["POST"])
 @limiter.limit("30/minute")
 def chat_with_main_audit_orchestrator():
@@ -162,21 +215,7 @@ def chat_with_main_audit_orchestrator():
     Modo Auditor: conversación guiada de auditoría de diligencia debida (Gemini + Pinecone RAG).
     Reemplaza la integración original con OpenAI.
     """
-    decoded_user = require_firebase_user_or_403()
-    uid = decoded_user.get("uid")
-    data = request.get_json(silent=True) or {}
-    user_message = data.get("message", "").strip()
-    thread_id = data.get("thread_id")
-
-    if not user_message:
-        return fail("El campo 'message' es obligatorio.", status=400)
-
-    try:
-        result = handle_chat_auditor(user_message, thread_id, uid)
-        return ok(result)
-    except Exception as e:
-        logger.error(f"/chat_auditor error: {e}", exc_info=True)
-        return fail(f"Error interno del servidor: {str(e)}", status=500)
+    return _process_chat_request(request, handle_chat_auditor)
 
 
 @app.route("/chat_assistant", methods=["POST"])
@@ -186,21 +225,8 @@ def chat_with_sustainability_expert():
     Modo Asesor: consultas libres de sostenibilidad (Gemini + Pinecone RAG).
     Reemplaza la integración original con OpenAI.
     """
-    decoded_user = require_firebase_user_or_403()
-    uid = decoded_user.get("uid")
-    data = request.get_json(silent=True) or {}
-    user_message = data.get("message", "").strip()
-    thread_id = data.get("thread_id")
+    return _process_chat_request(request, handle_chat_advisor)
 
-    if not user_message:
-        return fail("El campo 'message' es obligatorio.", status=400)
-
-    try:
-        result = handle_chat_advisor(user_message, thread_id, uid)
-        return ok(result)
-    except Exception as e:
-        logger.error(f"/chat_assistant error: {e}", exc_info=True)
-        return fail(f"Error interno del servidor: {str(e)}", status=500)
 
 
 # =============================================================================
