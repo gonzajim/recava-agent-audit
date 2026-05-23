@@ -608,19 +608,19 @@ export default function InteractiveAuditViewer() {
       <BlockStepper blocks={blocks} currentBlockId={currentQuestion?.block_id} />
 
       {/* ── Barra de progreso global ── */}
-      <Box sx={{ px:3, py:1.5, bgcolor:'background.paper', borderBottom:'1px solid', borderColor:'divider' }}>
-        <Box sx={{ display:'flex', justifyContent:'space-between', alignItems:'center', mb:0.75 }}>
-          <Box sx={{ display:'flex', gap:2, alignItems:'center' }}>
+      <Box sx={{ px:{xs:2, sm:3}, py:1.5, bgcolor:'background.paper', borderBottom:'1px solid', borderColor:'divider' }}>
+        <Box sx={{ display:'flex', flexDirection:{xs:'column', md:'row'}, justifyContent:'space-between', alignItems:{xs:'flex-start', md:'center'}, gap:1, mb:1 }}>
+          <Box sx={{ display:'flex', gap:1, alignItems:'center', flexWrap:'wrap' }}>
             <Typography variant="body2" fontWeight={600}>
-              {progress.answered} / {progress.applicable} preguntas respondidas
+              {progress.answered} / {progress.applicable} respondidas
             </Typography>
             {progress.skipped > 0 && (
               <Chip icon={<SkipNextIcon />} label={`${progress.skipped} no aplican`} size="small" sx={{ fontSize:'0.7rem', bgcolor:'grey.100' }} />
             )}
           </Box>
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
             <Typography variant="body2" color="text.secondary">
-              Quedan <strong>{remaining}</strong> pregunta{remaining!==1?'s':''}
+              Quedan <strong>{remaining}</strong>
             </Typography>
             <Chip label={`${progress.percent}%`} size="small" color="primary" />
             <Tooltip title="Ver informe de auditoría actual" arrow>
@@ -631,7 +631,7 @@ export default function InteractiveAuditViewer() {
                 onClick={openReport}
                 disabled={progress.answered === 0}
               >
-                Ver informe
+                Informe
               </Button>
             </Tooltip>
           </Stack>
@@ -657,12 +657,12 @@ export default function InteractiveAuditViewer() {
               </Box>
 
               {/* Texto de la pregunta */}
-              <Box sx={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', mb:2 }}>
-                <Typography variant="body1" fontWeight={600} sx={{ flex:1, pr:1, lineHeight:1.6 }}>
+              <Box sx={{ display:'flex', flexDirection:{ xs:'column', sm:'row' }, justifyContent:'space-between', alignItems:'flex-start', gap:1, mb:2 }}>
+                <Typography variant="body1" fontWeight={600} sx={{ flex:1, lineHeight:1.6 }}>
                   {currentQuestion.text}
                 </Typography>
                 <Tooltip title="Consultar al Asesor CSDDD sobre esta pregunta" arrow>
-                  <IconButton onClick={openAdvisor} color="info" size="small" sx={{ mt:-0.5, flexShrink:0 }}>
+                  <IconButton onClick={openAdvisor} color="info" size="small" sx={{ alignSelf:{xs:'flex-start', sm:'center'}, mt:{xs:0, sm:-0.5}, flexShrink:0 }}>
                     <HelpOutlineIcon />
                   </IconButton>
                 </Tooltip>
@@ -681,7 +681,7 @@ export default function InteractiveAuditViewer() {
               {error && <Alert severity="error" sx={{ mb:2 }}>{error}</Alert>}
 
               {/* Botones de acción */}
-              <Box sx={{ display:'flex', justifyContent:'space-between', alignItems:'center', mt:1 }}>
+              <Box sx={{ display:'flex', flexDirection:{ xs:'column-reverse', sm:'row' }, justifyContent:'space-between', alignItems:{ xs:'stretch', sm:'center' }, gap:2, mt:1 }}>
                 <Button
                   variant="text" size="small" color="info"
                   startIcon={<HelpOutlineIcon />} onClick={openAdvisor}
@@ -694,7 +694,7 @@ export default function InteractiveAuditViewer() {
                   disabled={!answer.trim()}
                   endIcon={<SendIcon />}
                 >
-                  {remaining === 1 ? 'Finalizar auditoría' : 'Siguiente pregunta'}
+                  {remaining === 1 ? 'Finalizar auditoría' : 'Siguiente'}
                 </Button>
               </Box>
             </Paper>

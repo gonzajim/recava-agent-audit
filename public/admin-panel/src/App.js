@@ -56,13 +56,13 @@ function App() {
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
         {/* ── Barra superior ── */}
         <AppBar position="static" elevation={1}>
-          <Toolbar>
-            <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 700 }}>
-              ReCaVa Buscador — Panel de Control
+          <Toolbar sx={{ flexWrap: 'wrap', minHeight: {xs: 64, sm: 64}, py: {xs:1, sm:0} }}>
+            <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 700, fontSize: {xs:'1.1rem', sm:'1.25rem'} }}>
+              ReCaVa Buscador
             </Typography>
             {user && (
-              <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                <Typography variant="body2" sx={{ opacity: 0.85 }}>
+              <Box sx={{ display: 'flex', gap: {xs:1, sm:2}, alignItems: 'center' }}>
+                <Typography variant="body2" sx={{ opacity: 0.85, display: {xs:'none', sm:'block'} }}>
                   {user.email}
                 </Typography>
                 <Button color="inherit" size="small" onClick={() => signOut(auth)}>
