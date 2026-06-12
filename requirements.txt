@@ -6,13 +6,18 @@ Flask-Cors
 Flask-Limiter
 gunicorn
 
-# --- Cliente de OpenAI ---
-openai
-packaging
+# --- Clientes de IA ---
+google-genai
+pinecone
+
+# --- Embeddings locales (debe coincidir con el modelo usado para indexar el corpus) ---
+# Modelo actual: all-MiniLM-L6-v2 (384 dims, inglés)
+# Migración recomendada: paraphrase-multilingual-MiniLM-L12-v2 (384 dims, multilingüe)
+# — requiere re-indexar el corpus Pinecone con el nuevo modelo.
+sentence-transformers
 
 # --- Utilidades ---
 python-dotenv
-httpx
 firebase-admin
 
 # --- Clientes de Google Cloud ---
