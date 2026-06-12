@@ -60,6 +60,7 @@ def search_documents(
                 "title": meta.get("source") or meta.get("title", ""),
                 "category": meta.get("primary_category", ""),
                 "score": score,
+                "page": meta.get("page"),  # int or None — not indexed in current corpus
             })
 
         return results[:_MAX_RESULTS]

@@ -404,7 +404,7 @@ def chat_with_sustainability_expert():
 
         history = get_thread_history(firestore_db, thread_id)
 
-        response_text = chat_with_expert(
+        response_text, sources = chat_with_expert(
             genai_client,
             embed_model,
             pinecone_index,
@@ -427,6 +427,7 @@ def chat_with_sustainability_expert():
         return ok(
             {
                 "response": response_text,
+                "sources": sources,
                 "thread_id": thread_id,
                 "run_id": run_id,
                 "run_status": "completed",

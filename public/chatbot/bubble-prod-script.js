@@ -1191,7 +1191,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (data.thread_id) currentChatThreadId = data.thread_id;
       if (data.response) {
         const cleaned = data.response.replace(/【.*?†source】/g,'').trim();
-        addAssistantMessageWithCitations(cleaned, data.citations || []);
+        addAssistantMessageWithCitations(cleaned, data.sources || []);
         currentConversationMessages.push({
           role: 'assistant',
           text: cleaned,
@@ -1213,23 +1213,55 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // ===================== 10) AUXILIARES UI =====================
-  function addAssistantMessageWithCitations(responseText, citationsList){
+  function addAssistantMessageWithCitations(responseText, sourcesList){
     const wrap = document.createElement('div'); wrap.classList.add('message','assistant-message');
     const main = document.createElement('div'); main.classList.add('main-assistant-text');
-    main.innerHTML = (window.marked ? marked.parse(responseText || "El asistente no proporcionó una respuesta textual.") : (responseText || "El asistente no proporcionó una respuesta textual."));
+
+    // Render markdown then replace [N] with clickable superscript badges
+    const fallback = "El asistente no proporcionó una respuesta textual.";
+    let html = window.marked ? marked.parse(responseText || fallback) : (responseText || fallback);
+    html = html.replace(/\[(\d+)\]/g, (_, n) =>
+      `<sup class="citation-inline" data-ref="${n}">[${n}]</sup>`
+    );
+    main.innerHTML = html;
     wrap.appendChild(main);
-    if (citationsList && citationsList.length){
+
+    if (sourcesList && sourcesList.length) {
       const cont = document.createElement('div'); cont.classList.add('citations-container');
-      citationsList.forEach(c=>{
-        const item = document.createElement('div'); item.classList.add('citation-item');
-        let html = `<span class="citation-marker">${escapeHtml(c.marker || '[?]')}</span>`;
-        html += `<span class="citation-quote">${escapeHtml(c.quote_from_file || 'Contenido no disponible.')}</span>`;
-        if (c.file_id) html += `<span class="citation-file-id">ID Archivo: ${escapeHtml(c.file_id)}</span>`;
-        item.innerHTML = html; cont.appendChild(item);
+      const label = document.createElement('div'); label.classList.add('citations-label');
+      label.textContent = `Fuentes documentales consultadas (${sourcesList.length})`;
+      cont.appendChild(label);
+
+      sourcesList.forEach(s => {
+        const item = document.createElement('div');
+        item.classList.add('citation-item');
+        item.dataset.idx = String(s.index);
+
+        const scorePct = Math.round((s.score || 0) * 100);
+        const pagePart = s.page != null ? ` · p.${s.page}` : '';
+        const catPart  = s.category ? ` · ${escapeHtml(s.category)}` : '';
+
+        item.innerHTML =
+          `<span class="citation-marker">[${s.index}]</span>` +
+          `<span class="citation-title">${escapeHtml(s.title || 'Documento')}</span>` +
+          `<span class="citation-meta">${catPart}${pagePart} · relevancia ${scorePct}%</span>` +
+          `<span class="citation-quote">${escapeHtml(s.excerpt || '')}</span>`;
+
+        cont.appendChild(item);
       });
       wrap.appendChild(cont);
     }
+
     chatMessagesEl.appendChild(wrap);
+
+    // Wire up inline badges → scroll to citation card
+    wrap.querySelectorAll('.citation-inline').forEach(badge => {
+      badge.addEventListener('click', () => {
+        const target = wrap.querySelector(`.citation-item[data-idx="${badge.dataset.ref}"]`);
+        if (target) { target.scrollIntoView({behavior:'smooth',block:'nearest'}); target.classList.add('citation-highlight'); setTimeout(()=>target.classList.remove('citation-highlight'), 1200); }
+      });
+    });
+
     scrollChatToBottom();
   }
   function addMessageToChatDOM(html, cls){

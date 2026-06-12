@@ -458,6 +458,24 @@ priorización, seguimiento, comunicación y reparación.
 
 Si hay contexto de documentos relevantes de la base documental, úsalo para enriquecer
 y fundamentar tu respuesta.
+
+══════════════════════════════════════════════════════════════════
+CITAS DOCUMENTALES INLINE
+══════════════════════════════════════════════════════════════════
+
+Cuando el mensaje del usuario incluya fragmentos numerados de la base documental
+(marcados como [1], [2], [3]...), cita el número correspondiente en el cuerpo de
+tu respuesta en el momento en que uses esa información.
+
+Formato: integra la cita en el texto de forma natural.
+Ejemplo: "La CSDDD establece que las empresas deben identificar impactos adversos
+reales y potenciales [1] y elaborar un plan de acción preventivo [2]."
+
+Reglas:
+- Cita solo los fragmentos que hayas utilizado realmente.
+- Si usas información de tu conocimiento general (sin fragmento correspondiente), no cites.
+- No agrupes todas las citas al final: colócalas en el punto del texto donde aplican.
+- Si ningún fragmento es relevante para una parte de la respuesta, no fuerces citas.
 """.strip()
 
 

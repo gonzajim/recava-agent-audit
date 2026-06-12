@@ -141,12 +141,13 @@ def chat_with_expert(
     pinecone_index,
     history: list[dict],
     user_message: str,
-) -> str:
+) -> tuple[str, list[dict]]:
     """
-    Runs one advisor turn with optional RAG augmentation from Pinecone.
-    embed_model is a SentenceTransformer instance used to embed the query.
+    Runs one advisor turn with RAG augmentation from Pinecone.
+    Returns (response_text, sources) where sources is the list of retrieved chunks
+    with index, title, category, score, excerpt, page.
     """
-    augmented_message = _build_rag_message(embed_model, pinecone_index, user_message)
+    augmented_message, sources = _build_rag_message(embed_model, pinecone_index, user_message)
 
     contents: list = list(history) + [
         types.Content(role="user", parts=[types.Part(text=augmented_message)])
@@ -159,7 +160,7 @@ def chat_with_expert(
         contents=contents,
         config=config,
     )
-    return _extract_text(response)
+    return _extract_text(response), sources
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +178,8 @@ def _dispatch_tool(
         query = args.get("query", "")
         logger.info("Tool invoke_sustainability_expert: thread=%s query=%r", thread_id, query[:80])
         try:
-            return chat_with_expert(genai_client, embed_model, pinecone_index, [], query)
+            text, _ = chat_with_expert(genai_client, embed_model, pinecone_index, [], query)
+            return text
         except Exception:
             logger.error("invoke_sustainability_expert failed", exc_info=True)
             return "El experto no pudo procesar la consulta en este momento."
@@ -251,49 +253,71 @@ def _detect_category_filter(query: str) -> dict | None:
     return None  # search all — CSRD/NEIS/OCDE live in 'general'
 
 
-def _build_rag_message(embed_model, pinecone_index, user_message: str) -> str:
+def _build_rag_message(
+    embed_model, pinecone_index, user_message: str
+) -> tuple[str, list[dict]]:
     """
-    Embeds user_message with SentenceTransformer, applies category filtering,
-    retrieves candidates (top_k=12), drops chunks below score 0.55,
-    and prepends up to 6 relevant excerpts to the message.
+    Embeds user_message, retrieves up to 6 scored chunks from Pinecone,
+    and returns (augmented_message, sources).
+
+    augmented_message prepends numbered excerpts so the model can cite [1]…[N].
+    sources is a list of dicts: {index, title, category, score, excerpt, page}.
     """
     if pinecone_index is None:
-        return user_message
+        return user_message, []
     try:
         embedding = generate_embedding(embed_model, user_message)
         cat_filter = _detect_category_filter(user_message)
         docs = search_documents(pinecone_index, embedding, metadata_filter=cat_filter)
         if cat_filter and not docs:
-            # Fallback: retry without filter if category narrowing returned nothing
             logger.info("RAG: category filter returned 0 results, retrying without filter")
             docs = search_documents(pinecone_index, embedding, metadata_filter=None)
     except Exception:
         logger.error("RAG retrieval failed", exc_info=True)
-        return user_message
+        return user_message, []
 
     if not docs:
-        return user_message
+        return user_message, []
 
     context_parts = []
+    sources = []
     for i, doc in enumerate(docs, 1):
         title = doc.get("title") or "Documento"
         category = doc.get("category", "")
         score = doc.get("score", 0.0)
-        header = f"[{i}] {title}" + (f" ({category}, score={score:.2f})" if category else "")
+        page = doc.get("page")
         content = doc.get("content", "").strip()
+
+        meta_parts = [category] if category else []
+        if page is not None:
+            meta_parts.append(f"p.{page}")
+        meta_parts.append(f"relevancia={score:.2f}")
+        header = f"[{i}] {title} ({', '.join(meta_parts)})"
+
         if content:
             context_parts.append(f"{header}\n{content}")
 
+        sources.append({
+            "index": i,
+            "title": title,
+            "category": category,
+            "score": round(score, 3),
+            "excerpt": content[:220] + ("…" if len(content) > 220 else ""),
+            "page": page,
+        })
+
     if not context_parts:
-        return user_message
+        return user_message, []
 
     context_block = "\n\n".join(context_parts)
-    return (
-        f"Contexto de la base documental de sostenibilidad:\n\n"
+    augmented = (
+        f"Fragmentos relevantes de la base documental "
+        f"(cítalos inline como [1], [2]… cuando los uses en tu respuesta):\n\n"
         f"{context_block}\n\n"
         f"---\n\n"
-        f"Pregunta del usuario: {user_message}"
+        f"Pregunta: {user_message}"
     )
+    return augmented, sources
 
 
 def _extract_text(response) -> str:

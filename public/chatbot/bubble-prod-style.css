@@ -146,19 +146,48 @@ body {
 .assistant-message .main-assistant-text p { margin-bottom: .5rem; }
 .assistant-message .main-assistant-text p:last-child { margin-bottom: 0; }
 
-/* Citas */
-.citations-container { margin-top: .8rem; border-top: 1px dashed #ced4da; padding-top: .8rem; }
+/* Fuentes documentales (grounding) */
+.citations-container {
+  margin-top: .9rem; border-top: 1px dashed #ced4da; padding-top: .75rem;
+}
+.citations-label {
+  font-size: .72rem; font-weight: 600; color: #888; text-transform: uppercase;
+  letter-spacing: .04em; margin-bottom: .5rem;
+}
 .citation-item {
   font-size: .8rem; color: var(--texto-gris-medio);
-  background-color: #fdfdfd; padding: .6rem .8rem;
-  border: 1px solid #e9ecef; border-radius: 5px; margin-bottom: .5rem; line-height: 1.4;
+  background-color: #fdfdfd; padding: .55rem .8rem;
+  border: 1px solid #e9ecef; border-radius: 6px; margin-bottom: .45rem;
+  line-height: 1.45; transition: background .2s, border-color .2s;
 }
-.citation-item .citation-marker { font-weight: bold; color: var(--uclm-rojo-principal); margin-right: .3em; }
+.citation-item.citation-highlight {
+  background-color: #fff4f4; border-color: var(--uclm-rojo-principal);
+}
+.citation-item .citation-marker {
+  font-weight: 700; color: var(--uclm-rojo-principal);
+  margin-right: .35em; font-size: .85rem;
+}
+.citation-item .citation-title {
+  font-weight: 600; color: #333; margin-right: .3em;
+}
+.citation-item .citation-meta {
+  font-size: .7rem; color: #888; display: block; margin: .1em 0 .3em;
+}
 .citation-item .citation-quote {
-  font-style: italic; color: #555; display: block; margin-top: .2em;
-  max-height: 100px; overflow-y: auto; border-left: 3px solid var(--uclm-rojo-principal); padding-left: .5em;
+  font-style: italic; color: #555; display: block;
+  border-left: 3px solid var(--uclm-rojo-principal); padding-left: .5em;
+  max-height: 80px; overflow-y: auto;
 }
-.citation-item .citation-file-id { font-size: .7rem; color: #777; display: block; margin-top: .3em; }
+/* Inline citation badge inside the message text */
+sup.citation-inline {
+  display: inline-block; cursor: pointer;
+  font-size: .65rem; font-weight: 700; line-height: 1;
+  color: #fff; background-color: var(--uclm-rojo-principal);
+  border-radius: 3px; padding: 1px 4px; margin-left: 1px;
+  vertical-align: super; transition: opacity .15s;
+  user-select: none;
+}
+sup.citation-inline:hover { opacity: .8; }
 
 /* -------------------------------------------------------------------------- */
 /* TARJETAS DE MODO (ya existentes)                                           */
