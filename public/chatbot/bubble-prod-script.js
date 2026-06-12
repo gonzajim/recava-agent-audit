@@ -1217,12 +1217,17 @@ document.addEventListener('DOMContentLoaded', function () {
     const wrap = document.createElement('div'); wrap.classList.add('message','assistant-message');
     const main = document.createElement('div'); main.classList.add('main-assistant-text');
 
-    // Render markdown then replace [N] with clickable superscript badges
+    // Render markdown then replace [N] with clickable+hoverable superscript badges
     const fallback = "El asistente no proporcionó una respuesta textual.";
     let html = window.marked ? marked.parse(responseText || fallback) : (responseText || fallback);
-    html = html.replace(/\[(\d+)\]/g, (_, n) =>
-      `<sup class="citation-inline" data-ref="${n}">[${n}]</sup>`
-    );
+    html = html.replace(/\[(\d+)\]/g, (_, n) => {
+      const src = (sourcesList || []).find(s => String(s.index) === n);
+      const ttTitle = src
+        ? escapeHtml(`${src.title}${src.page != null ? ` · p.${src.page}${src.total_pages ? '/' + src.total_pages : ''}` : ''}${src.category ? ' · ' + src.category : ''}`)
+        : '';
+      const ttExcerpt = src ? escapeHtml(src.excerpt || '') : '';
+      return `<sup class="citation-inline" data-ref="${n}" data-tt-title="${ttTitle}" data-tt-excerpt="${ttExcerpt}">[${n}]</sup>`;
+    });
     main.innerHTML = html;
     wrap.appendChild(main);
 
@@ -1274,6 +1279,45 @@ document.addEventListener('DOMContentLoaded', function () {
   function addSystemMessageToChat(t){ const s=t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); addMessageToChatDOM(s,'system-message'); }
   function addAssistantMessageInternal(html){ const el=document.createElement('div'); el.classList.add('message','assistant-message'); el.innerHTML=`<div class="main-assistant-text">${html}</div>`; chatMessagesEl.appendChild(el); scrollChatToBottom(); }
   function escapeHtml(u){ if(!u) return ''; return u.toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;"); }
+
+  // ---- RAG chunk tooltip (hover over inline citation badge) ----
+  const _ragTip = document.createElement('div');
+  _ragTip.id = 'rag-tooltip';
+  _ragTip.style.display = 'none';
+  document.body.appendChild(_ragTip);
+
+  function _positionRagTip(badge) {
+    _ragTip.style.visibility = 'hidden';
+    _ragTip.style.display = 'block';
+    const r = badge.getBoundingClientRect();
+    const h = _ragTip.offsetHeight, w = _ragTip.offsetWidth;
+    let top = r.top - h - 10;
+    let left = r.left;
+    if (top < 8) top = r.bottom + 10;
+    if (left + w > window.innerWidth - 8) left = window.innerWidth - w - 8;
+    if (left < 8) left = 8;
+    _ragTip.style.top = top + 'px';
+    _ragTip.style.left = left + 'px';
+    _ragTip.style.visibility = 'visible';
+  }
+
+  if (chatMessagesEl) {
+    chatMessagesEl.addEventListener('mouseover', e => {
+      const b = e.target.closest('.citation-inline');
+      if (!b) return;
+      const title = b.dataset.ttTitle || '';
+      const excerpt = b.dataset.ttExcerpt || '';
+      if (!title && !excerpt) return;
+      _ragTip.innerHTML =
+        (title   ? `<div class="tt-title">${title}</div>` : '') +
+        (excerpt ? `<div class="tt-excerpt">${excerpt}</div>` : '');
+      _positionRagTip(b);
+    });
+    chatMessagesEl.addEventListener('mouseout', e => {
+      if (e.target.closest('.citation-inline')) _ragTip.style.display = 'none';
+    });
+  }
+  // ---- end RAG tooltip ----
 
   function adjustUserInputHeight(){
     userInputEl.style.height='auto';

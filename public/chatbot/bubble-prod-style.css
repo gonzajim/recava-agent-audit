@@ -187,7 +187,28 @@ sup.citation-inline {
   vertical-align: super; transition: opacity .15s;
   user-select: none;
 }
-sup.citation-inline:hover { opacity: .8; }
+sup.citation-inline:hover { opacity: .75; }
+
+/* RAG chunk tooltip */
+#rag-tooltip {
+  position: fixed; z-index: 9999; pointer-events: none;
+  max-width: 360px; min-width: 180px;
+  background: #1c1c2e; color: #e8e8f0;
+  border-radius: 8px; padding: 10px 14px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.45);
+  border-left: 3px solid var(--uclm-rojo-principal);
+  font-size: .78rem; line-height: 1.55;
+  word-break: break-word;
+}
+#rag-tooltip .tt-title {
+  font-weight: 700; font-size: .8rem; color: #fff;
+  margin-bottom: .45em; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis;
+}
+#rag-tooltip .tt-excerpt {
+  font-style: italic; color: #b8b8d0;
+  max-height: 160px; overflow-y: auto;
+}
 
 /* -------------------------------------------------------------------------- */
 /* TARJETAS DE MODO (ya existentes)                                           */
