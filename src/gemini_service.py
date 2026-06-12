@@ -36,9 +36,14 @@ AUDITOR_TOOLS = types.Tool(
         types.FunctionDeclaration(
             name="complete_audit_block",
             description=(
-                "Marca el bloque de auditoría activo como completado. "
-                "Llama SOLO cuando hayas recogido información suficiente sobre los "
-                "aspectos fundamentales del bloque. Tras llamarla, anuncia el siguiente bloque."
+                "Marca el bloque de auditoría activo como completado y guarda el resumen de hallazgos. "
+                "REQUISITO ESTRICTO: llama a esta función ÚNICAMENTE cuando hayas obtenido respuesta "
+                "explícita a TODAS las preguntas marcadas [M] del bloque activo. "
+                "Si queda alguna pregunta [M] sin responder, formula esa pregunta primero — NO llames a esta función. "
+                "Una respuesta monosílaba ('sí', 'no', 'ya') no cubre una pregunta [M] que requiera detalle "
+                "(excepción: cuando la respuesta real es 'no tenemos eso' o 'no aplica'). "
+                "Cada bloque tiene entre 4 y 9 preguntas [M]; si llevas menos de 4 intercambios "
+                "en el bloque activo es casi seguro que aún no está cubierto."
             ),
             parameters=types.Schema(
                 type=types.Type.OBJECT,
@@ -50,8 +55,9 @@ AUDITOR_TOOLS = types.Tool(
                     "summary": types.Schema(
                         type=types.Type.STRING,
                         description=(
-                            "Resumen de 2-4 frases con los hallazgos principales del bloque: "
-                            "qué información se ha recogido, qué fortalezas y qué brechas se han detectado."
+                            "Resumen de 3-5 frases con los hallazgos principales del bloque: "
+                            "qué información se ha recogido, qué fortalezas y qué brechas se han detectado, "
+                            "y clasificación de brechas (Crítico / Alto / Medio) si las hay."
                         ),
                     ),
                 },
