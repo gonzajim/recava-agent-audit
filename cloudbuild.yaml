@@ -30,10 +30,11 @@ steps:
       - '--project'
       - '${PROJECT_ID}'
       - '--update-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest,PINECONE_API_KEY=PINECONE_API_KEY:latest,PINECONE_INDEX_NAME=PINECONE_INDEX_NAME:latest,BIGQUERY_DATASET_ID=BIGQUERY_DATASET_ID:latest,BIGQUERY_TABLE_ID=BIGQUERY_TABLE_ID:latest'
-      - '--timeout=300s'
-      - '--concurrency=80'
-      - '--cpu=1'
-      - '--memory=512Mi'
+      - '--set-env-vars=EMBEDDING_MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2'
+      - '--timeout=600s'
+      - '--concurrency=40'
+      - '--cpu=2'
+      - '--memory=2Gi'
 
   # -------------------------------------------------------------------------------------
   # PASO 2: Instalar las herramientas de Firebase
