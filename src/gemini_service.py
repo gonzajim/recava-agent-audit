@@ -286,11 +286,12 @@ def _build_rag_message(
         category = doc.get("category", "")
         score = doc.get("score", 0.0)
         page = doc.get("page")
+        total_pages = doc.get("total_pages")
         content = doc.get("content", "").strip()
 
         meta_parts = [category] if category else []
         if page is not None:
-            meta_parts.append(f"p.{page}")
+            meta_parts.append(f"p.{page}/{total_pages}" if total_pages else f"p.{page}")
         meta_parts.append(f"relevancia={score:.2f}")
         header = f"[{i}] {title} ({', '.join(meta_parts)})"
 
@@ -304,6 +305,7 @@ def _build_rag_message(
             "score": round(score, 3),
             "excerpt": content[:220] + ("…" if len(content) > 220 else ""),
             "page": page,
+            "total_pages": total_pages,
         })
 
     if not context_parts:

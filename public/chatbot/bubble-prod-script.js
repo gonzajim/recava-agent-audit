@@ -1238,7 +1238,9 @@ document.addEventListener('DOMContentLoaded', function () {
         item.dataset.idx = String(s.index);
 
         const scorePct = Math.round((s.score || 0) * 100);
-        const pagePart = s.page != null ? ` · p.${s.page}` : '';
+        const pagePart = s.page != null
+          ? ` · p.${s.page}${s.total_pages ? '/' + s.total_pages : ''}`
+          : '';
         const catPart  = s.category ? ` · ${escapeHtml(s.category)}` : '';
 
         item.innerHTML =
