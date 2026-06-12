@@ -164,6 +164,24 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // ===================== 3) HELPERS VERIFICACIÓN =====================
+  // Firebase Auth error code → Spanish message
+  const _fbErrors = {
+    'auth/email-already-in-use':   'Ese correo ya tiene una cuenta. Inicia sesión o recupera tu contraseña.',
+    'auth/invalid-email':          'El formato del correo no es válido.',
+    'auth/weak-password':          'La contraseña debe tener al menos 6 caracteres.',
+    'auth/user-not-found':         'No existe ninguna cuenta con ese correo.',
+    'auth/wrong-password':         'Contraseña incorrecta.',
+    'auth/invalid-credential':     'Correo o contraseña incorrectos.',
+    'auth/user-disabled':          'Esta cuenta ha sido deshabilitada. Contacta con el administrador.',
+    'auth/too-many-requests':      'Demasiados intentos fallidos. Espera unos minutos e inténtalo de nuevo.',
+    'auth/network-request-failed': 'Error de red. Comprueba tu conexión e inténtalo de nuevo.',
+    'auth/operation-not-allowed':  'El registro no está habilitado. Contacta con el administrador.',
+    'auth/requires-recent-login':  'Por seguridad, cierra sesión, vuelve a entrar y repite la operación.',
+  };
+  function _fbMsg(err) {
+    return _fbErrors[err?.code] || err?.message || 'Error inesperado. Inténtalo de nuevo.';
+  }
+
   async function sendVerificationIfNeeded(user) {
     try { if (user && !user.emailVerified) await user.sendEmailVerification(); }
     catch(e){ console.error('No se pudo enviar verificación:', e); }
@@ -225,7 +243,7 @@ document.addEventListener('DOMContentLoaded', function () {
         loginErrorEl.style.display = 'block';
       }
     } catch (err) {
-      loginErrorEl.textContent = "Error: " + (err?.message || "Operación no completada");
+      loginErrorEl.textContent = _fbMsg(err);
       loginErrorEl.style.display = 'block';
     }
   });
@@ -273,7 +291,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // ===================== 6) LOGIN / REGISTRO =====================
   loginButtonEl?.addEventListener('click', async () => {
-    const email = emailInputEl.value, password = passwordInputEl.value;
+    const email = emailInputEl.value.trim(), password = passwordInputEl.value;
     if (!email || !password) {
       loginErrorEl.textContent = "Por favor, introduce email y contraseña.";
       loginErrorEl.style.display = 'block'; return;
@@ -286,26 +304,31 @@ document.addEventListener('DOMContentLoaded', function () {
         loginErrorEl.style.display = 'block';
       }
     } catch (err) {
-      const msg = String(err?.message || "");
-      loginErrorEl.textContent = "Error: " + msg;
+      loginErrorEl.textContent = _fbMsg(err);
       loginErrorEl.style.display = 'block';
     }
   });
 
   registerButtonEl?.addEventListener('click', async () => {
-    const email = emailInputEl.value, password = passwordInputEl.value;
+    const email = emailInputEl.value.trim(), password = passwordInputEl.value;
     if (!email || !password) {
       loginErrorEl.textContent = "Por favor, introduce email y contraseña.";
       loginErrorEl.style.display = 'block'; return;
     }
     try {
       const cred = await auth.createUserWithEmailAndPassword(email, password);
-      await sendVerificationIfNeeded(cred.user);
-      loginErrorEl.textContent = "Cuenta creada. Te hemos enviado un email para verificarla.";
+      let msg = "Cuenta creada.";
+      try {
+        await cred.user.sendEmailVerification();
+        msg += " Te hemos enviado un email de verificación.";
+      } catch (_) {
+        msg += " No pudimos enviar el email de verificación — usa el botón 'Reenviar verificación'.";
+      }
+      loginErrorEl.textContent = msg;
       loginErrorEl.style.display = 'block';
       verifyBanner.style.display = 'block';
     } catch (err) {
-      loginErrorEl.textContent = "Error: " + (err?.message || "No se pudo registrar");
+      loginErrorEl.textContent = _fbMsg(err);
       loginErrorEl.style.display = 'block';
     }
   });
