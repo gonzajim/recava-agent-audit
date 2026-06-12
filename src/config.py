@@ -3,14 +3,12 @@ import os
 import logging
 import openai
 from flask import Flask
-from flask_cors import CORS
 from google.cloud import bigquery
 from packaging import version
 from httpx import Timeout
 
-# --- 1. Inicialización de Flask y CORS ---
+# --- 1. Inicialización de Flask ---
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True, methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], allow_headers=["Content-Type", "Authorization", "X-Requested-With"])
 
 # --- 2. Configuración Centralizada de Logging ---
 logger = logging.getLogger(__name__)

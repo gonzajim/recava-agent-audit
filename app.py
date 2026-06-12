@@ -122,7 +122,7 @@ def _req_end(resp):
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["X-Frame-Options"] = "DENY"
     resp.headers["Referrer-Policy"] = "no-referrer"
-    logger.info(json.dumps({"evt": "request_end", "id": request._id, "status": resp.status_code, "ms": dur_ms}))
+    logger.info(json.dumps({"evt": "request_end", "id": getattr(request, "_id", ""), "status": resp.status_code, "ms": dur_ms}))
     return resp
 
 
