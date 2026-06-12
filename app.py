@@ -5,17 +5,15 @@ import json
 import uuid
 import datetime
 from flask import request, jsonify, abort
-from openai import APITimeoutError
 
 # --- Configuración base y clientes externos ---
-from src.config import app, logger, client, ORCHESTRATOR_ASSISTANT_ID, ASISTENTE_ID
+from src.config import app, logger, genai_client, pinecone_index, embed_model
 
-# Persistencia / OpenAI / BigQuery (tuyos)
+# --- Servicios ---
 from src.persistence_service import persist_conversation_turn
-from src.openai_service import (
-    execute_invoke_sustainability_expert,
-    process_assistant_message_without_citations,
-)
+from src.history_service import get_thread_history, append_messages
+from src.gemini_service import chat_with_auditor, chat_with_expert
+from src.rag_service import ingest_document
 from src.bigquery_service import (
     fetch_recent_conversations_for_user,
     fetch_conversation_thread,
@@ -24,11 +22,9 @@ from src.bigquery_service import (
 # --- Firebase Admin / Firestore ---
 import firebase_admin
 from firebase_admin import credentials, auth as fb_auth, firestore
-
-# Firestore server timestamps y decoradores transaccionales
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
-# --- CORS (opcional) y Rate Limiting ---
+# --- CORS y Rate Limiting ---
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -55,36 +51,31 @@ firestore_db = firestore.client()
 # =============================================================================
 # 1) CORS y Rate Limiting
 # =============================================================================
-# Orígenes permitidos: Lee desde variable de entorno o usa defaults seguros
-_allowed_origins_str = os.getenv("CORS_ORIGINS", "https://recava-auditor-dev.web.app,https://recava-auditor.web.app,http://localhost:8000")
-_allowed_origins = [origin.strip() for origin in _allowed_origins_str.split(",") if origin.strip()]
+_allowed_origins_str = os.getenv(
+    "CORS_ORIGINS",
+    "https://recava-auditor-dev.web.app,https://recava-auditor.web.app,http://localhost:8000",
+)
+_allowed_origins = [o.strip() for o in _allowed_origins_str.split(",") if o.strip()]
 
-# Si no se define nada específico, permitir solo los dominios de Firebase y localhost
 if not _allowed_origins or "*" in _allowed_origins:
     _allowed_origins = [
-        "https://recava-auditor-dev.web.app", # Tu entorno de dev
-        "https://recava-auditor.web.app",   # Tu (futuro) entorno de prod
-        "http://localhost:8000"           # Para pruebas locales
+        "https://recava-auditor-dev.web.app",
+        "https://recava-auditor.web.app",
+        "http://localhost:8000",
     ]
-    logger.warning(f"CORS_ORIGINS no definida o '*', usando defaults seguros: {_allowed_origins}")
+    logger.warning("CORS_ORIGINS no definida o '*', usando defaults seguros: %s", _allowed_origins)
 
 CORS(
     app,
-    # Permite solo los orígenes especificados
     origins=_allowed_origins,
-    # Permite credenciales si las usaras (aunque ahora usas Authorization header)
     supports_credentials=True,
-    # Métodos y Headers necesarios para tu app
     methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
-    # Headers que el frontend podrá leer
     expose_headers=["X-Request-Id"],
-    # Tiempo que el navegador puede cachear la respuesta OPTIONS (preflight)
-    max_age=86400 # 1 día
+    max_age=86400,
 )
-logger.info(f"CORS configured for origins: {_allowed_origins}")
+logger.info("CORS configured for origins: %s", _allowed_origins)
 
-# Rate Limiting (sin cambios)
 limiter = Limiter(get_remote_address, app=app, default_limits=["120/minute"])
 
 
@@ -106,7 +97,6 @@ def fail(message, status=400, **details):
 def _req_start():
     request._id = uuid.uuid4().hex[:12]
     request._t0 = time.time()
-    # No logueamos el cuerpo (datos sensibles); solo metadatos
     logger.info(
         json.dumps(
             {"evt": "request_start", "id": request._id, "path": request.path, "method": request.method}
@@ -122,7 +112,9 @@ def _req_end(resp):
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["X-Frame-Options"] = "DENY"
     resp.headers["Referrer-Policy"] = "no-referrer"
-    logger.info(json.dumps({"evt": "request_end", "id": request._id, "status": resp.status_code, "ms": dur_ms}))
+    logger.info(
+        json.dumps({"evt": "request_end", "id": request._id, "status": resp.status_code, "ms": dur_ms})
+    )
     return resp
 
 
@@ -130,7 +122,7 @@ def _req_end(resp):
 # 3) Autenticación y helpers
 # =============================================================================
 def require_firebase_user_or_403():
-    """Verifica ID token Firebase; exige email verificado. 401 si falta/incorrecto, 403 si no verificado."""
+    """Verifica ID token Firebase; exige email verificado."""
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         abort(401, description="Falta Authorization Bearer token")
@@ -138,13 +130,10 @@ def require_firebase_user_or_403():
     try:
         decoded = fb_auth.verify_id_token(id_token)
     except Exception as e:
-        logger.warning(f"Auth: token inválido: {e}")
+        logger.warning("Auth: token inválido: %s", e)
         abort(401, description="Token inválido")
     if not decoded.get("email_verified", False):
         abort(403, description="Email no verificado")
-    logger.debug(
-        f"Auth OK uid={decoded.get('uid')} email={decoded.get('email')} verified={decoded.get('email_verified')}"
-    )
     return decoded
 
 
@@ -159,16 +148,14 @@ def _build_user_metadata(decoded_user: dict) -> dict:
 
 
 def _iso_utc(ts):
-    """Normaliza a ISO-8601 UTC (acepta datetime/FirestoreTimestamp/str/None)."""
     if ts is None:
         return None
     if isinstance(ts, datetime.datetime):
         if ts.tzinfo is None:
             ts = ts.replace(tzinfo=datetime.timezone.utc)
         return ts.astimezone(datetime.timezone.utc).isoformat()
-    # Firestore Timestamp tiene .isoformat() tras conversión a datetime por SDK en responses
     try:
-        return ts.isoformat()  # si ya es datetime-like
+        return ts.isoformat()
     except Exception:
         pass
     try:
@@ -249,11 +236,44 @@ def _build_audit_progress_payload(thread_id, uid, doc_data):
     }
 
 
+def _format_audit_context(progress: dict) -> str:
+    """
+    Converts the audit progress payload into a human-readable string
+    injected into AUDITOR_SYSTEM_PROMPT at {audit_context}.
+    """
+    lines = []
+    active = progress.get("active_block_id", "block_1")
+    completed_count = progress.get("completed_count", 0)
+    total = progress.get("total_blocks", 8)
+
+    # Find label for active block
+    active_label = active
+    for b in progress.get("blocks", []):
+        if b["id"] == active:
+            active_label = b["label"]
+            break
+
+    lines.append(f"Bloque activo: {active_label}")
+    lines.append(f"Progreso: {completed_count} de {total} bloques completados")
+
+    completed_blocks = [b for b in progress.get("blocks", []) if b["status"] == "completed"]
+    if completed_blocks:
+        lines.append("Bloques completados:")
+        for b in completed_blocks:
+            summary = b.get("summary") or "(sin resumen)"
+            lines.append(f"  • {b['label']}: {summary}")
+
+    pending = [b["label"] for b in progress.get("blocks", []) if b["status"] != "completed"]
+    if pending:
+        lines.append(f"Bloques pendientes: {', '.join(pending)}")
+
+    return "\n".join(lines)
+
+
 # =============================================================================
 # 5) Propiedad de hilos (security)
 # =============================================================================
 def ensure_thread_ownership(thread_id: str, uid: str):
-    """Registra o valida que el thread pertenece al uid dado."""
     doc_ref = firestore_db.collection("threads").document(thread_id)
     snap = doc_ref.get()
     if snap.exists:
@@ -279,88 +299,57 @@ def audit_blocks():
 def chat_with_main_audit_orchestrator():
     decoded_user = require_firebase_user_or_403()
     persistence_metadata = _build_user_metadata(decoded_user)
+    uid = decoded_user["uid"]
 
     if request.content_type != "application/json":
         return fail("Content-Type must be application/json", 415)
     data = request.get_json(silent=True) or {}
 
     user_message = (data.get("message") or "").strip()
-    thread_id = data.get("thread_id")
+    thread_id = data.get("thread_id") or str(uuid.uuid4())
     if not user_message:
         return fail("message is required", 400)
     if len(user_message) > 4000:
         return fail("message too long", 413)
 
     endpoint_name = "/chat_auditor"
-    openai_client = client.with_options(timeout=60.0)
+    run_id = uuid.uuid4().hex  # synthetic; maintains API contract
 
-    if not thread_id:
-        try:
-            thread_id = openai_client.beta.threads.create().id
-        except APITimeoutError as exc:
-            logger.warning("%s: timeout creando thread en OpenAI: %s", endpoint_name, exc)
-            return fail(
-                "El orquestador tardó demasiado en iniciar la conversación.",
-                status=504,
-                upstream="openai",
-                detail=str(exc),
-            )
-
-    # Verifica/Registra propiedad del hilo
-    ensure_thread_ownership(thread_id, decoded_user["uid"])
-
-    run = None
+    ensure_thread_ownership(thread_id, uid)
 
     try:
         logger.info(
-            f"{endpoint_name}: uid={decoded_user.get('uid')} email={decoded_user.get('email')} thread_id={thread_id}"
+            "%s: uid=%s thread_id=%s", endpoint_name, uid, thread_id
         )
 
-        openai_client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=user_message,
+        # Load audit progress and conversation history
+        progress_doc = _get_audit_progress_doc(thread_id).get()
+        progress = _build_audit_progress_payload(
+            thread_id, uid, progress_doc.to_dict() if progress_doc.exists else {}
+        )
+        audit_context = _format_audit_context(progress)
+        history = get_thread_history(firestore_db, thread_id)
+
+        response_text = chat_with_auditor(
+            genai_client,
+            embed_model,
+            firestore_db,
+            pinecone_index,
+            history,
+            user_message,
+            thread_id,
+            audit_context,
         )
 
-        # Ejecuta orquestador
-        run = openai_client.beta.threads.runs.create_and_poll(
-            thread_id=thread_id,
-            assistant_id=ORCHESTRATOR_ASSISTANT_ID,
-            timeout=180.0,
-        )
-
-        # Soporte de herramientas si requiere acción
-        if run.status == "requires_action":
-            tool_outputs = []
-            ra = run.required_action
-            for tc in ra.submit_tool_outputs.tool_calls:
-                if tc.function.name == "invoke_sustainability_expert":
-                    args = json.loads(tc.function.arguments or "{}")
-                    query = args.get("query")
-                    output = execute_invoke_sustainability_expert(query, thread_id)
-                    tool_outputs.append({"tool_call_id": tc.id, "output": output})
-
-            if tool_outputs:
-                run = openai_client.beta.threads.runs.submit_tool_outputs_and_poll(
-                    thread_id=thread_id,
-                    run_id=run.id,
-                    tool_outputs=tool_outputs,
-                    timeout=180.0,
-                )
-
-        if run.status != "completed":
-            raise Exception(f"Run ended with status={run.status}. Details: {getattr(run, 'last_error', None)}")
-
-        messages = openai_client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id, order="desc")
-        response_text = process_assistant_message_without_citations(messages.data, run.id, endpoint_name)
+        append_messages(firestore_db, thread_id, user_message, response_text)
 
         persist_conversation_turn(
             thread_id,
             user_message,
             response_text,
             endpoint_name,
-            run_id=run.id,
-            assistant_name="MainAuditOrchestrator",
+            run_id=run_id,
+            assistant_name="AuditorGemini",
             **persistence_metadata,
         )
 
@@ -368,36 +357,19 @@ def chat_with_main_audit_orchestrator():
             {
                 "response": response_text,
                 "thread_id": thread_id,
-                "run_id": run.id,
-                "run_status": run.status,
+                "run_id": run_id,
+                "run_status": "completed",
             }
         )
 
-    except APITimeoutError as exc:
-        logger.warning("%s: timeout esperando respuesta de OpenAI: %s", endpoint_name, exc)
-        persist_conversation_turn(
-            thread_id,
-            user_message,
-            "API Timeout: OpenAI no respondió a tiempo.",
-            endpoint_name,
-            run_id=getattr(run, "id", None),
-            assistant_name="Timeout",
-            **persistence_metadata,
-        )
-        return fail(
-            "El orquestador no respondió a tiempo. Inténtalo de nuevo en unos segundos.",
-            status=504,
-            upstream="openai",
-            detail=str(exc),
-        )
     except Exception as e:
-        logger.error(f"{endpoint_name}: error: {e}", exc_info=True)
+        logger.error("%s: error: %s", endpoint_name, e, exc_info=True)
         persist_conversation_turn(
             thread_id,
             user_message,
             f"API Error: {e}",
             endpoint_name,
-            run_id=getattr(run, "id", None),
+            run_id=run_id,
             assistant_name="Exception",
             **persistence_metadata,
         )
@@ -409,67 +381,46 @@ def chat_with_main_audit_orchestrator():
 def chat_with_sustainability_expert():
     decoded_user = require_firebase_user_or_403()
     persistence_metadata = _build_user_metadata(decoded_user)
+    uid = decoded_user["uid"]
 
     if request.content_type != "application/json":
         return fail("Content-Type must be application/json", 415)
     data = request.get_json(silent=True) or {}
 
     user_message = (data.get("message") or "").strip()
-    thread_id = data.get("thread_id")
+    thread_id = data.get("thread_id") or str(uuid.uuid4())
     if not user_message:
         return fail("message is required", 400)
     if len(user_message) > 4000:
         return fail("message too long", 413)
 
     endpoint_name = "/chat_assistant"
-    openai_client = client.with_options(timeout=60.0)
+    run_id = uuid.uuid4().hex
 
-    if not thread_id:
-        try:
-            thread_id = openai_client.beta.threads.create().id
-        except APITimeoutError as exc:
-            logger.warning("%s: timeout creando thread en OpenAI: %s", endpoint_name, exc)
-            return fail(
-                "El asistente tardó demasiado en iniciar la conversación.",
-                status=504,
-                upstream="openai",
-                detail=str(exc),
-            )
-
-    ensure_thread_ownership(thread_id, decoded_user["uid"])
-
-    run = None
+    ensure_thread_ownership(thread_id, uid)
 
     try:
-        logger.info(
-            f"{endpoint_name}: uid={decoded_user.get('uid')} email={decoded_user.get('email')} thread_id={thread_id}"
+        logger.info("%s: uid=%s thread_id=%s", endpoint_name, uid, thread_id)
+
+        history = get_thread_history(firestore_db, thread_id)
+
+        response_text = chat_with_expert(
+            genai_client,
+            embed_model,
+            pinecone_index,
+            history,
+            user_message,
         )
 
-        openai_client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=user_message,
-        )
-
-        run = openai_client.beta.threads.runs.create_and_poll(
-            thread_id=thread_id,
-            assistant_id=ASISTENTE_ID,
-            timeout=180.0,
-        )
-
-        if run.status != "completed":
-            raise Exception(f"Run ended with status={run.status}. Details: {getattr(run, 'last_error', None)}")
-
-        messages = openai_client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id, order="desc")
-        response_text = process_assistant_message_without_citations(messages.data, run.id, endpoint_name)
+        append_messages(firestore_db, thread_id, user_message, response_text)
 
         persist_conversation_turn(
             thread_id,
             user_message,
             response_text,
             endpoint_name,
-            run_id=run.id,
-            assistant_name="SustainabilityExpert",
+            run_id=run_id,
+            assistant_name="AsesorGemini",
             **persistence_metadata,
         )
 
@@ -477,45 +428,63 @@ def chat_with_sustainability_expert():
             {
                 "response": response_text,
                 "thread_id": thread_id,
-                "run_id": run.id,
-                "run_status": run.status,
+                "run_id": run_id,
+                "run_status": "completed",
             }
         )
 
-    except APITimeoutError as exc:
-        logger.warning("%s: timeout esperando respuesta de OpenAI: %s", endpoint_name, exc)
-        persist_conversation_turn(
-            thread_id,
-            user_message,
-            "API Timeout: OpenAI no respondió a tiempo.",
-            endpoint_name,
-            run_id=getattr(run, "id", None),
-            assistant_name="Timeout",
-            **persistence_metadata,
-        )
-        return fail(
-            "El asistente no respondió a tiempo. Inténtalo de nuevo en unos segundos.",
-            status=504,
-            upstream="openai",
-            detail=str(exc),
-        )
     except Exception as e:
-        logger.error(f"{endpoint_name}: error: {e}", exc_info=True)
+        logger.error("%s: error: %s", endpoint_name, e, exc_info=True)
         persist_conversation_turn(
             thread_id,
             user_message,
             f"API Error: {e}",
             endpoint_name,
-            run_id=getattr(run, "id", None),
+            run_id=run_id,
             assistant_name="Exception",
             **persistence_metadata,
         )
         return fail("Internal server error", status=500, details=str(e))
 
 
+@limiter.limit("10/minute")
+@app.route("/admin/ingest_document", methods=["POST"])
+def admin_ingest_document():
+    """Ingests a document into the Pinecone RAG index."""
+    decoded_user = require_firebase_user_or_403()
+
+    if request.content_type != "application/json":
+        return fail("Content-Type must be application/json", 415)
+    data = request.get_json(silent=True) or {}
+
+    content = (data.get("content") or "").strip()
+    if not content:
+        return fail("content is required", 400)
+    if len(content) > 50_000:
+        return fail("content too long (max 50 000 chars)", 413)
+
+    doc_id = data.get("doc_id") or None
+    title = data.get("title") or ""
+    source_url = data.get("source_url") or ""
+    doc_type = data.get("doc_type") or ""
+
+    try:
+        used_id = ingest_document(
+            embed_model, pinecone_index, doc_id, content, title, source_url, doc_type
+        )
+        logger.info(
+            "/admin/ingest_document: uid=%s doc_id=%s", decoded_user.get("uid"), used_id
+        )
+        return ok({"doc_id": used_id, "status": "ingested"})
+    except RuntimeError as e:
+        return fail(str(e), status=503)
+    except Exception as e:
+        logger.error("/admin/ingest_document: error: %s", e, exc_info=True)
+        return fail("Failed to ingest document", status=500, details=str(e))
+
+
 @app.route("/chat_history/recents", methods=["GET"])
 def get_recent_chat_history():
-    """Devuelve las últimas conversaciones del usuario autenticado."""
     decoded_user = require_firebase_user_or_403()
     uid = decoded_user.get("uid")
     try:
@@ -535,11 +504,8 @@ def get_recent_chat_history():
 
 @app.route("/chat_history/thread/<thread_id>", methods=["GET"])
 def get_chat_history_thread(thread_id: str):
-    """Devuelve todos los mensajes de una conversación concreta si pertenece al usuario."""
     decoded_user = require_firebase_user_or_403()
     uid = decoded_user.get("uid")
-
-    # Seguridad: el hilo debe pertenecer al usuario
     ensure_thread_ownership(thread_id, uid)
 
     try:
@@ -554,11 +520,8 @@ def get_chat_history_thread(thread_id: str):
 
 @app.route("/audit_progress/<thread_id>", methods=["GET"])
 def get_audit_progress(thread_id: str):
-    """Devuelve el estado de progreso de auditoría para un hilo concreto."""
     decoded_user = require_firebase_user_or_403()
     uid = decoded_user.get("uid")
-
-    # Seguridad: el hilo debe pertenecer al usuario
     ensure_thread_ownership(thread_id, uid)
 
     try:
@@ -580,11 +543,8 @@ def get_audit_progress(thread_id: str):
 
 @app.route("/audit_progress/<thread_id>", methods=["POST"])
 def update_audit_progress(thread_id: str):
-    """Actualiza el estado de un bloque de auditoría para un hilo."""
     decoded_user = require_firebase_user_or_403()
     uid = decoded_user.get("uid")
-
-    # Seguridad: el hilo debe pertenecer al usuario
     ensure_thread_ownership(thread_id, uid)
 
     body = request.get_json(silent=True) or {}
@@ -641,18 +601,15 @@ def update_audit_progress(thread_id: str):
 
 @app.route("/health", methods=["GET"])
 def health_check():
-    """Comprobación básica de que el proceso está vivo."""
     return ok({"status": "healthy"})
 
 
 @app.route("/readyz", methods=["GET"])
 def readyz():
-    """Comprobación de dependencias: Firestore (y opcional OpenAI si quieres añadir)."""
+    """Checks Firestore connectivity and Gemini model availability."""
     try:
-        # Ping liviano a Firestore
         firestore_db.collection("_ready").document("ping").get()
-        # Podrías añadir una llamada barata a OpenAI si tu política lo permite:
-        # _ = client.models.list()  # cuidado con costes/latencia
+        genai_client.models.get(model="gemini-2.5-flash")
         return ok({"status": "ready"})
     except Exception as e:
         return fail("degraded", status=503, details=str(e))
