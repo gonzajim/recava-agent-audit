@@ -1,0 +1,40 @@
+# Version control
+.git
+.gitignore
+
+# Python bytecode
+__pycache__
+*.py[cod]
+*.pyo
+.pytest_cache
+
+# Virtual environments
+.venv
+venv/
+
+# Environment files
+.env
+.env.*
+
+# Frontend (not needed in the backend container)
+public/
+functions/
+
+# Node
+node_modules/
+
+# Cloud / Docker meta
+Dockerfile*
+cloudbuild.yaml
+.dockerignore
+
+# Firebase
+firebase.json
+.firebaserc
+firestore.rules
+firestore.indexes.json
+storage.rules
+
+# Docs
+*.md
+docs/

@@ -8,18 +8,43 @@
 
 steps:
   # -------------------------------------------------------------------------------------
-  # PASO 1: Desplegar el Backend en Cloud Run
+  # PASO 1a: Build de la imagen Docker con caché de capas
+  # Usa --cache-from con :latest para reutilizar capas del build anterior.
+  # La capa pip install (sentence-transformers ~2 GB) queda cacheada si
+  # requirements.txt no cambió → de 8 min a <1 min en builds típicos.
+  # -------------------------------------------------------------------------------------
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'Build-Backend-Image'
+    args:
+      - 'build'
+      - '--cache-from'
+      - 'europe-west1-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/${_SERVICE_NAME}:latest'
+      - '-t'
+      - 'europe-west1-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/${_SERVICE_NAME}:latest'
+      - '.'
+
+  # -------------------------------------------------------------------------------------
+  # PASO 1b: Push de la imagen (también actualiza :latest para el próximo cache)
+  # -------------------------------------------------------------------------------------
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'Push-Backend-Image'
+    args:
+      - 'push'
+      - 'europe-west1-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/${_SERVICE_NAME}:latest'
+    waitFor: ['Build-Backend-Image']
+
+  # -------------------------------------------------------------------------------------
+  # PASO 1c: Desplegar el Backend en Cloud Run usando la imagen ya construida
   # -------------------------------------------------------------------------------------
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'Deploy-Backend-to-Cloud-Run'
     entrypoint: 'gcloud'
     args:
-      - '--verbosity=debug'
       - 'run'
       - 'deploy'
       - '${_SERVICE_NAME}'
-      - '--source'
-      - '.'
+      - '--image'
+      - 'europe-west1-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/${_SERVICE_NAME}:latest'
       - '--region'
       - 'europe-west1'
       - '--platform'
@@ -35,6 +60,7 @@ steps:
       - '--concurrency=40'
       - '--cpu=2'
       - '--memory=2Gi'
+    waitFor: ['Push-Backend-Image']
 
   # -------------------------------------------------------------------------------------
   # PASO 2: Instalar las herramientas de Firebase
@@ -82,6 +108,9 @@ steps:
 substitutions:
   _SERVICE_NAME: 'orchestrator'
   _FIREBASE_PROJECT_ALIAS: 'prod'
+
+images:
+  - 'europe-west1-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/${_SERVICE_NAME}:latest'
 
 options:
   defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
