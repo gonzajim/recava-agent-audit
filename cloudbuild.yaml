@@ -59,7 +59,7 @@ steps:
       - '--timeout=600s'
       - '--concurrency=40'
       - '--cpu=2'
-      - '--memory=2Gi'
+      - '--memory=4Gi'
     waitFor: ['Push-Backend-Image']
 
   # -------------------------------------------------------------------------------------

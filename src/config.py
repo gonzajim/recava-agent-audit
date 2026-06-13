@@ -71,6 +71,12 @@ try:
     embed_model = SentenceTransformer(_EMBEDDING_MODEL_NAME)
     logger.info("SentenceTransformer '%s' loaded.", _EMBEDDING_MODEL_NAME)
 
+    # In-memory FAISS store — one per session, keyed by thread_id.
+    # Imported here after sentence-transformers to keep model warm before FAISS init.
+    from src.local_vector_store import LocalVectorStore
+    local_store = LocalVectorStore(dim=384)
+    logger.info("LocalVectorStore (FAISS) initialised (max_sessions=%d).", local_store._max)
+
 except Exception as e:
     logger.critical("Failed to initialize external clients: %s", e, exc_info=True)
     raise

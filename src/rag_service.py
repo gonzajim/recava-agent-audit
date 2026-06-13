@@ -6,6 +6,7 @@
 # Migration path (when ready to re-index corpus):
 #   Set EMBEDDING_MODEL_NAME=paraphrase-multilingual-MiniLM-L12-v2 (still 384 dims,
 #   multilingual, better Spanish quality) and re-run the ingestion pipeline.
+import io
 import uuid
 from src.config import logger
 
@@ -104,3 +105,75 @@ def ingest_document(
     }])
     logger.info("Ingested document '%s' into Pinecone.", doc_id)
     return doc_id
+
+
+# ---------------------------------------------------------------------------
+# Category filter (shared with context_orchestrator to avoid circular import)
+# ---------------------------------------------------------------------------
+
+_CSDDD_TERMS = {
+    "csddd", "diligencia debida", "cadena de actividades", "impactos adversos",
+    "impacto adverso", "reparación", "reclamacion", "reclamación", "socio comercial",
+    "due diligence", "conducta empresarial responsable",
+}
+_GRI_TERMS = {
+    "gri", "global reporting initiative", "estándar gri", "estandar gri",
+    "contenido gri", "indicador gri",
+}
+
+
+def detect_category_filter(query: str) -> dict | None:
+    """
+    Returns a Pinecone metadata filter based on keyword signals.
+    Corpus categories: 'CSDDD', 'GRI', 'general'.
+
+    - Clear GRI query → ['GRI', 'general']
+    - Clear CSDDD query (≥2 hits) → ['CSDDD', 'general']
+    - Mixed/CSRD/unknown → None (search all)
+    """
+    q = query.lower()
+    hits_csddd = sum(1 for t in _CSDDD_TERMS if t in q)
+    hits_gri = sum(1 for t in _GRI_TERMS if t in q)
+    if hits_gri >= 1 and hits_csddd == 0:
+        return {"primary_category": {"$in": ["GRI", "general"]}}
+    if hits_csddd >= 2 and hits_gri == 0:
+        return {"primary_category": {"$in": ["CSDDD", "general"]}}
+    return None
+
+
+# ---------------------------------------------------------------------------
+# PDF extraction + chunking (for /upload_document endpoint)
+# ---------------------------------------------------------------------------
+
+_CHUNK_WORDS = 400
+_CHUNK_OVERLAP = 50
+_MAX_CHUNKS = 500   # guard against very large PDFs
+
+
+def extract_pdf_chunks(file_bytes: bytes, chunk_words: int = _CHUNK_WORDS, overlap: int = _CHUNK_OVERLAP) -> list[str]:
+    """
+    Extracts text from a PDF byte string and splits it into overlapping chunks.
+    Uses pypdf (pure Python, no system deps).
+    Returns a list of non-empty text strings (up to _MAX_CHUNKS).
+    """
+    from pypdf import PdfReader
+
+    reader = PdfReader(io.BytesIO(file_bytes))
+    all_words: list[str] = []
+    for page in reader.pages:
+        text = page.extract_text() or ""
+        all_words.extend(text.split())
+
+    if not all_words:
+        return []
+
+    chunks = []
+    step = chunk_words - overlap
+    for start in range(0, len(all_words), step):
+        chunk = " ".join(all_words[start : start + chunk_words])
+        if chunk.strip():
+            chunks.append(chunk)
+        if len(chunks) >= _MAX_CHUNKS:
+            break
+
+    return chunks

@@ -7,13 +7,13 @@ import datetime
 from flask import request, jsonify, abort
 
 # --- Configuración base y clientes externos ---
-from src.config import app, logger, genai_client, pinecone_index, embed_model
+from src.config import app, logger, genai_client, pinecone_index, embed_model, local_store
 
 # --- Servicios ---
 from src.persistence_service import persist_conversation_turn
 from src.history_service import get_thread_history, append_messages
 from src.gemini_service import chat_with_auditor, chat_with_expert
-from src.rag_service import ingest_document
+from src.rag_service import ingest_document, extract_pdf_chunks
 from src.bigquery_service import (
     fetch_recent_conversations_for_user,
     fetch_conversation_thread,
@@ -410,6 +410,8 @@ def chat_with_sustainability_expert():
             pinecone_index,
             history,
             user_message,
+            thread_id=thread_id,
+            local_store=local_store,
         )
 
         append_messages(firestore_db, thread_id, user_message, response_text)
@@ -446,6 +448,59 @@ def chat_with_sustainability_expert():
             **persistence_metadata,
         )
         return fail("Internal server error", status=500, details=str(e))
+
+
+@limiter.limit("10/minute")
+@app.route("/upload_document", methods=["POST"])
+def upload_document():
+    """
+    Accepts a PDF upload, extracts + chunks its text, embeds every chunk,
+    and stores the vectors in the in-memory FAISS index keyed by thread_id.
+    Requires Firebase auth. Returns {thread_id, chunks_indexed, filename}.
+    """
+    decoded_user = require_firebase_user_or_403()
+    uid = decoded_user["uid"]
+
+    if "file" not in request.files:
+        return fail("No file field in request", 400)
+    uploaded_file = request.files["file"]
+    if not uploaded_file.filename:
+        return fail("Empty filename", 400)
+    if not uploaded_file.filename.lower().endswith(".pdf"):
+        return fail("Solo se admiten archivos PDF.", 415)
+
+    file_bytes = uploaded_file.read()
+    if len(file_bytes) > 20 * 1024 * 1024:
+        return fail("El archivo supera el límite de 20 MB.", 413)
+    if not file_bytes:
+        return fail("El archivo está vacío.", 400)
+
+    thread_id = (request.form.get("thread_id") or "").strip() or str(uuid.uuid4())
+    ensure_thread_ownership(thread_id, uid)
+
+    try:
+        chunks = extract_pdf_chunks(file_bytes)
+        if not chunks:
+            return fail("No se pudo extraer texto del PDF.", 422)
+
+        embeddings = [
+            embed_model.encode(c, normalize_embeddings=True).tolist() for c in chunks
+        ]
+        total = local_store.add_chunks(thread_id, chunks, embeddings)
+
+        logger.info(
+            "/upload_document: uid=%s thread=%s file=%s chunks=%d total=%d",
+            uid, thread_id, uploaded_file.filename, len(chunks), total,
+        )
+        return ok({
+            "thread_id": thread_id,
+            "chunks_indexed": len(chunks),
+            "total_chunks": total,
+            "filename": uploaded_file.filename,
+        })
+    except Exception as e:
+        logger.error("/upload_document: error: %s", e, exc_info=True)
+        return fail("Error al procesar el documento.", 500, details=str(e))
 
 
 @limiter.limit("10/minute")

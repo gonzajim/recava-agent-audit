@@ -4,7 +4,8 @@ from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
 from src.config import logger
 from src.assistant_instructions import AUDITOR_SYSTEM_PROMPT, EXPERT_SYSTEM_PROMPT
-from src.rag_service import generate_embedding, search_documents
+from src.rag_service import generate_embedding, search_documents, detect_category_filter
+from src.context_orchestrator import search_hybrid
 
 _GEMINI_MODEL = "gemini-2.5-flash"
 
@@ -141,13 +142,18 @@ def chat_with_expert(
     pinecone_index,
     history: list[dict],
     user_message: str,
+    thread_id: str | None = None,
+    local_store=None,
 ) -> tuple[str, list[dict]]:
     """
-    Runs one advisor turn with RAG augmentation from Pinecone.
-    Returns (response_text, sources) where sources is the list of retrieved chunks
-    with index, title, category, score, excerpt, page.
+    Runs one advisor turn with RAG augmentation.
+    If thread_id and local_store are provided and the session has indexed chunks,
+    runs hybrid search (Pinecone + FAISS in parallel). Otherwise Pinecone-only.
+    Returns (response_text, sources).
     """
-    augmented_message, sources = _build_rag_message(embed_model, pinecone_index, user_message)
+    augmented_message, sources = _build_rag_message(
+        embed_model, pinecone_index, user_message, thread_id=thread_id, local_store=local_store
+    )
 
     contents: list = list(history) + [
         types.Content(role="user", parts=[types.Part(text=augmented_message)])
@@ -221,57 +227,45 @@ def _update_audit_progress(
         return f"Bloque {block_id} procesado (no se pudo persistir el estado)."
 
 
-_CSDDD_TERMS = {
-    "csddd", "diligencia debida", "cadena de actividades", "impactos adversos",
-    "impacto adverso", "reparación", "reclamacion", "reclamación", "socio comercial",
-    "due diligence", "conducta empresarial responsable",
-}
-_GRI_TERMS = {
-    "gri", "global reporting initiative", "estándar gri", "estandar gri",
-    "contenido gri", "indicador gri",
-}
-
-
-def _detect_category_filter(query: str) -> dict | None:
-    """
-    Returns a Pinecone metadata filter based on keyword signals in the query.
-    Corpus categories: 'CSDDD', 'GRI', 'general' (CSRD/NEIS/OCDE/marco teórico).
-
-    Strategy:
-    - Clear CSDDD query → ['CSDDD', 'general']  (exclude GRI-only chunks)
-    - Clear GRI query   → ['GRI', 'general']    (exclude CSDDD-only chunks)
-    - Mixed / CSRD / unknown → None (search all categories)
-    """
-    q = query.lower()
-    hits_csddd = sum(1 for t in _CSDDD_TERMS if t in q)
-    hits_gri = sum(1 for t in _GRI_TERMS if t in q)
-
-    if hits_gri >= 1 and hits_csddd == 0:
-        return {"primary_category": {"$in": ["GRI", "general"]}}
-    if hits_csddd >= 2 and hits_gri == 0:
-        return {"primary_category": {"$in": ["CSDDD", "general"]}}
-    return None  # search all — CSRD/NEIS/OCDE live in 'general'
-
-
 def _build_rag_message(
-    embed_model, pinecone_index, user_message: str
+    embed_model,
+    pinecone_index,
+    user_message: str,
+    thread_id: str | None = None,
+    local_store=None,
 ) -> tuple[str, list[dict]]:
     """
-    Embeds user_message, retrieves up to 6 scored chunks from Pinecone,
-    and returns (augmented_message, sources).
+    Retrieves relevant chunks and builds the augmented message for the LLM.
 
+    When local_store has chunks for thread_id, runs hybrid search (Pinecone + FAISS
+    concurrently via context_orchestrator). Otherwise falls back to Pinecone-only.
+    Results from the uploaded document appear first; Pinecone docs follow.
     augmented_message prepends numbered excerpts so the model can cite [1]…[N].
-    sources is a list of dicts: {index, title, category, score, excerpt, page}.
     """
-    if pinecone_index is None:
-        return user_message, []
+    use_hybrid = (
+        local_store is not None
+        and thread_id is not None
+        and local_store.chunk_count(thread_id) > 0
+    )
+
     try:
-        embedding = generate_embedding(embed_model, user_message)
-        cat_filter = _detect_category_filter(user_message)
-        docs = search_documents(pinecone_index, embedding, metadata_filter=cat_filter)
-        if cat_filter and not docs:
-            logger.info("RAG: category filter returned 0 results, retrying without filter")
-            docs = search_documents(pinecone_index, embedding, metadata_filter=None)
+        if use_hybrid:
+            pine_docs, local_docs = search_hybrid(
+                thread_id, user_message, embed_model, pinecone_index, local_store
+            )
+            # Local (uploaded) docs first, then Pinecone — both sorted by score
+            local_docs_sorted = sorted(local_docs, key=lambda d: d.get("score", 0), reverse=True)
+            pine_docs_sorted = sorted(pine_docs, key=lambda d: d.get("score", 0), reverse=True)
+            docs = local_docs_sorted + pine_docs_sorted
+        else:
+            if pinecone_index is None:
+                return user_message, []
+            embedding = generate_embedding(embed_model, user_message)
+            cat_filter = detect_category_filter(user_message)
+            docs = search_documents(pinecone_index, embedding, metadata_filter=cat_filter)
+            if cat_filter and not docs:
+                logger.info("RAG: category filter returned 0 results, retrying without filter")
+                docs = search_documents(pinecone_index, embedding, metadata_filter=None)
     except Exception:
         logger.error("RAG retrieval failed", exc_info=True)
         return user_message, []

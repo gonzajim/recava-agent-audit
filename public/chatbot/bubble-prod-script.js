@@ -87,6 +87,38 @@ document.addEventListener('DOMContentLoaded', function () {
   const registerButtonEl = document.getElementById('register-button');
   const loginErrorEl = document.getElementById('login-error');
 
+  // Inject "Olvidé mi contraseña" link below the buttons in the login box
+  (() => {
+    const loginBox = document.querySelector('#login-view .login-box, #login-container .login-box');
+    const errEl = loginBox?.querySelector('.error-message, #login-error');
+    if (loginBox && errEl) {
+      const link = document.createElement('button');
+      link.className = 'forgot-password-link';
+      link.type = 'button';
+      link.textContent = '¿Olvidaste tu contraseña?';
+      link.addEventListener('click', async () => {
+        const email = emailInputEl?.value?.trim();
+        if (!email) {
+          loginErrorEl.textContent = 'Introduce tu email arriba para recibir el enlace.';
+          loginErrorEl.classList.remove('is-success');
+          loginErrorEl.style.display = 'block';
+          return;
+        }
+        try {
+          await auth.sendPasswordResetEmail(email);
+          loginErrorEl.textContent = 'Te hemos enviado un enlace para restablecer tu contraseña.';
+          loginErrorEl.classList.add('is-success');
+          loginErrorEl.style.display = 'block';
+        } catch (err) {
+          loginErrorEl.textContent = _fbMsg(err);
+          loginErrorEl.classList.remove('is-success');
+          loginErrorEl.style.display = 'block';
+        }
+      });
+      loginBox.insertBefore(link, errEl);
+    }
+  })();
+
   const chatBubbleEl = document.getElementById('chat-bubble');
   const chatWidgetContainerEl = document.getElementById('chat-widget-container');
   const chatCloseButtonEl = document.getElementById('chat-close-button');
@@ -100,6 +132,24 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Accesibilidad log
   if (chatMessagesEl) { chatMessagesEl.setAttribute('aria-live','polite'); chatMessagesEl.setAttribute('role','log'); }
+
+  // Scroll-to-bottom button
+  let scrollToBottomBtn = null;
+  if (chatWrapperEl) {
+    scrollToBottomBtn = document.createElement('button');
+    scrollToBottomBtn.id = 'scroll-to-bottom-btn';
+    scrollToBottomBtn.title = 'Ir al final';
+    scrollToBottomBtn.innerHTML = '&#8595;';
+    scrollToBottomBtn.setAttribute('aria-label', 'Ir al final del chat');
+    chatWrapperEl.appendChild(scrollToBottomBtn);
+    scrollToBottomBtn.addEventListener('click', () => scrollChatToBottom({ behavior: 'smooth' }));
+  }
+  function _updateScrollBtn() {
+    if (!chatMessagesEl || !scrollToBottomBtn) return;
+    const distFromBottom = chatMessagesEl.scrollHeight - chatMessagesEl.scrollTop - chatMessagesEl.clientHeight;
+    scrollToBottomBtn.classList.toggle('visible', distFromBottom > 120);
+  }
+  chatMessagesEl?.addEventListener('scroll', debounce(_updateScrollBtn, 80));
 
   const AUDIT_BLOCKS_DEFINITION = [
     { id: 'block_1', label: '1. Contexto y Alcance' },
@@ -298,6 +348,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     try {
       const cred = await auth.signInWithEmailAndPassword(email, password);
+      loginErrorEl.classList.remove('is-success');
       if (!cred.user.emailVerified) {
         verifyBanner.style.display = 'block';
         loginErrorEl.textContent = "Debes verificar tu correo antes de usar el chat.";
@@ -305,6 +356,7 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     } catch (err) {
       loginErrorEl.textContent = _fbMsg(err);
+      loginErrorEl.classList.remove('is-success');
       loginErrorEl.style.display = 'block';
     }
   });
@@ -317,7 +369,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     try {
       const cred = await auth.createUserWithEmailAndPassword(email, password);
-      let msg = "Cuenta creada.";
+      let msg = "¡Cuenta creada!";
       try {
         await cred.user.sendEmailVerification();
         msg += " Te hemos enviado un email de verificación.";
@@ -325,10 +377,12 @@ document.addEventListener('DOMContentLoaded', function () {
         msg += " No pudimos enviar el email de verificación — usa el botón 'Reenviar verificación'.";
       }
       loginErrorEl.textContent = msg;
+      loginErrorEl.classList.add('is-success');
       loginErrorEl.style.display = 'block';
       verifyBanner.style.display = 'block';
     } catch (err) {
       loginErrorEl.textContent = _fbMsg(err);
+      loginErrorEl.classList.remove('is-success');
       loginErrorEl.style.display = 'block';
     }
   });
@@ -360,8 +414,9 @@ document.addEventListener('DOMContentLoaded', function () {
     // Fila 1: bienvenida
     const welcome = document.createElement('div');
     welcome.className = 'welcome-banner';
+    const displayName = (currentUser.displayName || currentUser.email || '').split('@')[0] || 'usuario';
     welcome.innerHTML =
-      `¡Hola ${currentUser.email}! Somos tus auditores legales especializados en Diligencia Debida en materia de Sostenibilidad.<br/>
+      `¡Hola, <strong>${displayName}</strong>! Somos tus auditores legales especializados en Diligencia Debida en materia de Sostenibilidad.<br/>
        <strong>Elige el modo en el que quieres interactuar:</strong>`;
     selectionContainer.appendChild(welcome);
 
@@ -484,7 +539,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const title = document.createElement('h2');
     title.className = 'history-title';
-    title.textContent = 'Tus ultimas conversaciones';
+    title.textContent = 'Tus últimas conversaciones';
 
     const subtitle = document.createElement('p');
     subtitle.className = 'history-subtitle';
@@ -1255,11 +1310,19 @@ document.addEventListener('DOMContentLoaded', function () {
     wrap.appendChild(main);
 
     if (sourcesList && sourcesList.length) {
-      const cont = document.createElement('div'); cont.classList.add('citations-container');
-      const label = document.createElement('div'); label.classList.add('citations-label');
-      label.textContent = `Fuentes documentales consultadas (${sourcesList.length})`;
-      cont.appendChild(label);
+      const cont = document.createElement('div');
+      cont.classList.add('citations-container', 'collapsed');
 
+      const toggle = document.createElement('div');
+      toggle.classList.add('citations-toggle');
+      toggle.innerHTML =
+        `<span class="citations-label">Fuentes documentales (${sourcesList.length})</span>` +
+        `<span class="citations-toggle__arrow">▼</span>`;
+      toggle.addEventListener('click', () => cont.classList.toggle('collapsed'));
+      cont.appendChild(toggle);
+
+      const list = document.createElement('div');
+      list.classList.add('citations-list');
       sourcesList.forEach(s => {
         const item = document.createElement('div');
         item.classList.add('citation-item');
@@ -1277,8 +1340,9 @@ document.addEventListener('DOMContentLoaded', function () {
           `<span class="citation-meta">${catPart}${pagePart} · relevancia ${scorePct}%</span>` +
           `<span class="citation-quote">${escapeHtml(s.excerpt || '')}</span>`;
 
-        cont.appendChild(item);
+        list.appendChild(item);
       });
+      cont.appendChild(list);
       wrap.appendChild(cont);
     }
 
@@ -1356,7 +1420,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if(typingIndicatorDiv) return;
     typingIndicatorDiv=document.createElement('div');
     typingIndicatorDiv.classList.add('message','assistant-message','typing-indicator');
-    typingIndicatorDiv.textContent="Generando una respuesta...";
+    typingIndicatorDiv.innerHTML='<div class="typing-dots"><span></span><span></span><span></span></div>';
     chatMessagesEl.appendChild(typingIndicatorDiv);
     scrollChatToBottom({ behavior: 'smooth' });
   }
@@ -1386,7 +1450,124 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
-  attachFileButtonEl?.addEventListener('click', ()=> addSystemMessageToChat("La funcionalidad de adjuntar archivos se gestiona automáticamente por el asistente."));
+  // ===================== FILE UPLOAD =====================
+  let pendingFile = null;
+
+  // Hidden file input — injected once
+  const fileInputEl = document.createElement('input');
+  fileInputEl.type = 'file';
+  fileInputEl.accept = 'application/pdf';
+  fileInputEl.style.display = 'none';
+  document.body.appendChild(fileInputEl);
+
+  // File preview row (already in HTML as #file-preview-area)
+  const filePreviewEl = document.getElementById('file-preview-area');
+  let filePreviewNameEl = null;
+  let uploadBtnEl = null;
+  if (filePreviewEl) {
+    filePreviewNameEl = filePreviewEl.querySelector('span') || (() => {
+      const s = document.createElement('span'); filePreviewEl.prepend(s); return s;
+    })();
+    uploadBtnEl = document.createElement('button');
+    uploadBtnEl.className = 'upload-pdf-btn';
+    uploadBtnEl.textContent = 'Subir PDF';
+    uploadBtnEl.type = 'button';
+    const removeBtn = filePreviewEl.querySelector('.remove-file-button');
+    filePreviewEl.insertBefore(uploadBtnEl, removeBtn || null);
+    uploadBtnEl.addEventListener('click', () => handleFileUpload());
+  }
+
+  function showFilePreview(file) {
+    pendingFile = file;
+    if (filePreviewNameEl) filePreviewNameEl.textContent = `📄 ${file.name}`;
+    filePreviewEl?.classList.add('has-file');
+  }
+  function clearFilePreview() {
+    pendingFile = null;
+    fileInputEl.value = '';
+    if (filePreviewNameEl) filePreviewNameEl.textContent = '';
+    filePreviewEl?.classList.remove('has-file');
+  }
+
+  // "Remove file" button
+  filePreviewEl?.querySelector('.remove-file-button')?.addEventListener('click', clearFilePreview);
+
+  fileInputEl.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      addSystemMessageToChat('Solo se admiten archivos PDF.');
+      fileInputEl.value = '';
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      addSystemMessageToChat('El archivo supera el límite de 20 MB.');
+      fileInputEl.value = '';
+      return;
+    }
+    showFilePreview(file);
+  });
+
+  async function handleFileUpload() {
+    if (!pendingFile) return;
+    if (!currentUser) { addSystemMessageToChat('Debes iniciar sesión para subir documentos.'); return; }
+    if (!currentChatMode) currentChatMode = 'advisor';
+
+    let token;
+    try { token = await getVerifiedIdTokenOrThrow(); }
+    catch(e) { addSystemMessageToChat(e.message || 'Necesitas verificar tu email.'); return; }
+
+    if (uploadBtnEl) { uploadBtnEl.disabled = true; uploadBtnEl.textContent = 'Subiendo…'; }
+    const fileName = pendingFile.name;
+
+    const formData = new FormData();
+    formData.append('file', pendingFile);
+    if (currentChatThreadId) formData.append('thread_id', currentChatThreadId);
+
+    const baseUrl = getOrchestratorBaseUrl();
+    try {
+      const { signal, cancel } = withTimeout(120000);
+      const resp = await fetch(`${baseUrl}/upload_document`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData,
+        signal,
+      }).finally(cancel);
+
+      const data = await parseApiResponse(resp);
+      if (data.thread_id && !currentChatThreadId) currentChatThreadId = data.thread_id;
+
+      addSystemMessageToChat(
+        `✓ ${data.chunks_indexed} fragmentos de "<strong>${escapeHtml(fileName)}</strong>" indexados. Ahora puedes hacer preguntas sobre el documento.`
+          .replace(/&lt;strong&gt;/g, '<strong>').replace(/&lt;\/strong&gt;/g, '</strong>')
+      );
+      // Show upload in messages as a system line with real HTML
+      const sysDiv = chatMessagesEl.lastElementChild;
+      if (sysDiv?.classList.contains('system-message')) {
+        sysDiv.innerHTML =
+          `✓ ${data.chunks_indexed} fragmentos de "<strong>${escapeHtml(fileName)}</strong>" indexados. ` +
+          `Ahora puedes hacer preguntas sobre el documento.`;
+      }
+
+      clearFilePreview();
+
+      // Enable chat if first interaction
+      if (!chatMessagesEl.style.display || chatMessagesEl.style.display === 'none') {
+        chatMessagesEl.style.display = 'flex';
+        sendButtonEl.disabled = false;
+        userInputEl.placeholder = 'Pregunta sobre el documento o sobre normativa...';
+      }
+    } catch (err) {
+      addSystemMessageToChat(`Error al subir el documento: ${err.message}`);
+    } finally {
+      if (uploadBtnEl) { uploadBtnEl.disabled = false; uploadBtnEl.textContent = 'Subir PDF'; }
+    }
+  }
+
+  attachFileButtonEl?.addEventListener('click', () => {
+    if (!currentUser) { addSystemMessageToChat('Debes iniciar sesión para subir documentos.'); return; }
+    fileInputEl.click();
+  });
   sendButtonEl?.addEventListener('click', handleSendMessageToServer);
   userInputEl?.addEventListener('keypress', (e)=> {
     if (e.key === 'Enter' && !e.shiftKey && !sendButtonEl.disabled) { e.preventDefault(); handleSendMessageToServer(); }
