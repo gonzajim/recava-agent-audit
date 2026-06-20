@@ -4,10 +4,24 @@ from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
 from src.config import logger
 from src.assistant_instructions import AUDITOR_SYSTEM_PROMPT, EXPERT_SYSTEM_PROMPT
-from src.rag_service import generate_embedding, search_documents, detect_category_filter
+from src.rag_service import (
+    generate_embedding,
+    search_documents,
+    detect_category_filter,
+    classify_question,
+    get_routing_strategy,
+    get_graph_context,
+)
 from src.context_orchestrator import search_hybrid
 
 _GEMINI_MODEL = "gemini-2.5-flash"
+
+# Context window budget per model (chars, with 0.90 safety factor applied)
+_CONTEXT_BUDGET: dict[str, int] = {
+    "gemini-2.5-flash":      180_000,
+    "gemini-2.5-flash-lite": 180_000,
+    "gemini-2.5-pro":        540_000,
+}
 
 # ---------------------------------------------------------------------------
 # Tool declarations for the auditor
@@ -233,23 +247,33 @@ def _build_rag_message(
     user_message: str,
     thread_id: str | None = None,
     local_store=None,
+    model_name: str = _GEMINI_MODEL,
 ) -> tuple[str, list[dict]]:
     """
     Retrieves relevant chunks and builds the augmented message for the LLM.
 
     When local_store has chunks for thread_id, runs hybrid search (Pinecone + FAISS
     concurrently via context_orchestrator). Otherwise falls back to Pinecone-only.
+    For operational/resource questions, also queries Neo4j for relationship triples.
     Results from the uploaded document appear first; Pinecone docs follow.
     augmented_message prepends numbered excerpts so the model can cite [1]…[N].
     """
-    use_hybrid = (
+    char_budget = _CONTEXT_BUDGET.get(model_name, 180_000)
+    question_type = classify_question(user_message)
+    strategy = get_routing_strategy(question_type)
+    logger.info(
+        "RAG routing: question_type=%s strategy=%s model=%s budget=%d",
+        question_type, strategy, model_name, char_budget,
+    )
+
+    use_hybrid_faiss = (
         local_store is not None
         and thread_id is not None
         and local_store.chunk_count(thread_id) > 0
     )
 
     try:
-        if use_hybrid:
+        if use_hybrid_faiss:
             pine_docs, local_docs = search_hybrid(
                 thread_id, user_message, embed_model, pinecone_index, local_store
             )
@@ -270,11 +294,10 @@ def _build_rag_message(
         logger.error("RAG retrieval failed", exc_info=True)
         return user_message, []
 
-    if not docs:
-        return user_message, []
-
     context_parts = []
     sources = []
+    used_chars = len(user_message)
+
     for i, doc in enumerate(docs, 1):
         title = doc.get("title") or "Documento"
         category = doc.get("category", "")
@@ -289,8 +312,10 @@ def _build_rag_message(
         meta_parts.append(f"relevancia={score:.2f}")
         header = f"[{i}] {title} ({', '.join(meta_parts)})"
 
-        if content:
-            context_parts.append(f"{header}\n{content}")
+        chunk = f"{header}\n{content}"
+        if content and used_chars + len(chunk) <= char_budget:
+            context_parts.append(chunk)
+            used_chars += len(chunk)
 
         sources.append({
             "index": i,
@@ -302,16 +327,44 @@ def _build_rag_message(
             "total_pages": total_pages,
         })
 
-    if not context_parts:
+    # Graph context for operational/resource questions (Neo4j)
+    graph_section = ""
+    if strategy == "hybrid":
+        graph_budget = max(0, char_budget - used_chars - 500)
+        if graph_budget > 0:
+            graph_ctx = get_graph_context(user_message, char_budget=graph_budget)
+            if graph_ctx:
+                graph_section = f"\n\n{graph_ctx}"
+                used_chars += len(graph_ctx)
+
+    if not context_parts and not graph_section:
         return user_message, []
 
-    context_block = "\n\n".join(context_parts)
-    augmented = (
-        f"Fragmentos relevantes de la base documental "
-        f"(cítalos inline como [1], [2]… cuando los uses en tu respuesta):\n\n"
-        f"{context_block}\n\n"
-        f"---\n\n"
-        f"Pregunta: {user_message}"
+    semantic_block = "\n\n".join(context_parts)
+
+    if semantic_block and graph_section:
+        augmented = (
+            f"## CONTEXTO SEMÁNTICO\n"
+            f"Fragmentos relevantes de la base documental "
+            f"(cítalos inline como [1], [2]… cuando los uses en tu respuesta):\n\n"
+            f"{semantic_block}"
+            f"\n\n## RELACIONES DE GRAFO{graph_section}"
+            f"\n\n---\n\nPregunta: {user_message}"
+        )
+    elif semantic_block:
+        augmented = (
+            f"Fragmentos relevantes de la base documental "
+            f"(cítalos inline como [1], [2]… cuando los uses en tu respuesta):\n\n"
+            f"{semantic_block}\n\n---\n\nPregunta: {user_message}"
+        )
+    else:
+        augmented = (
+            f"{graph_section.strip()}\n\n---\n\nPregunta: {user_message}"
+        )
+
+    logger.info(
+        "RAG message built: %d semantic chunks, graph=%s, total_chars=%d",
+        len(context_parts), bool(graph_section), used_chars,
     )
     return augmented, sources
 

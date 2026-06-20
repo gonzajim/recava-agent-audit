@@ -9,6 +9,7 @@
 
   <!-- Librerías -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
@@ -18,8 +19,8 @@
   <!-- Ocultamos la burbuja: el chat va a pantalla casi completa -->
   <div id="chat-bubble" style="display:none;"></div>
 
-  <div id="chat-widget-container" class="is-open" style="position:static; visibility:visible; opacity:1; transform:none; width:100%;">
-    <div id="chat-container" style="max-width:1100px; margin:2vh auto; border-radius:12px; display:flex; flex-direction:column;">
+  <div id="chat-widget-container" class="is-open" style="position:static; visibility:visible; opacity:1; transform:none; width:100%; height:calc(100vh - 100px);">
+    <div id="chat-container" style="max-width:1100px; margin:2vh auto; border-radius:12px; display:flex; flex-direction:column; height:100%;">
       
       <!-- Header -->
       <div class="chat-header">
@@ -67,13 +68,13 @@
           </div>
           <div id="input-controls">
             <input type="file" id="file-input" class="hidden"/>
-            <button id="attach-file-button" title="Adjuntar archivo">
+            <button id="attach-file-button" title="Adjuntar PDF (máx. 20 MB)">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none"
                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.49"></path>
               </svg>
             </button>
-            <textarea id="user-input" rows="1" placeholder="Selecciona un modo para comenzar..."></textarea>
+            <textarea id="user-input" rows="1" placeholder="Selecciona un modo para comenzar..." title="Enter para enviar · Shift+Enter para nueva línea"></textarea>
             <button id="send-button">Enviar</button>
           </div>
         </div>

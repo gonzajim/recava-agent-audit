@@ -26,3 +26,6 @@ firebase-admin
 
 # --- Clientes de Google Cloud ---
 google-cloud-bigquery
+
+# --- Grafo de conocimiento (GraphRAG) ---
+neo4j>=5.20.0

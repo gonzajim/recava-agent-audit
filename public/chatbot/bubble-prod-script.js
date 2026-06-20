@@ -346,6 +346,8 @@ document.addEventListener('DOMContentLoaded', function () {
       loginErrorEl.textContent = "Por favor, introduce email y contraseña.";
       loginErrorEl.style.display = 'block'; return;
     }
+    loginButtonEl.disabled = true;
+    loginButtonEl.textContent = 'Iniciando sesión...';
     try {
       const cred = await auth.signInWithEmailAndPassword(email, password);
       loginErrorEl.classList.remove('is-success');
@@ -358,6 +360,9 @@ document.addEventListener('DOMContentLoaded', function () {
       loginErrorEl.textContent = _fbMsg(err);
       loginErrorEl.classList.remove('is-success');
       loginErrorEl.style.display = 'block';
+    } finally {
+      loginButtonEl.disabled = false;
+      loginButtonEl.textContent = 'Entrar';
     }
   });
 
@@ -367,6 +372,8 @@ document.addEventListener('DOMContentLoaded', function () {
       loginErrorEl.textContent = "Por favor, introduce email y contraseña.";
       loginErrorEl.style.display = 'block'; return;
     }
+    registerButtonEl.disabled = true;
+    registerButtonEl.textContent = 'Creando cuenta...';
     try {
       const cred = await auth.createUserWithEmailAndPassword(email, password);
       let msg = "¡Cuenta creada!";
@@ -384,6 +391,9 @@ document.addEventListener('DOMContentLoaded', function () {
       loginErrorEl.textContent = _fbMsg(err);
       loginErrorEl.classList.remove('is-success');
       loginErrorEl.style.display = 'block';
+    } finally {
+      registerButtonEl.disabled = false;
+      registerButtonEl.textContent = 'Registrarse';
     }
   });
 
@@ -924,10 +934,12 @@ document.addEventListener('DOMContentLoaded', function () {
       li.dataset.blockId = block.id;
 
       const statusLabel = formatAuditBlockStatus(block.status, isActive);
+      const stepContent = block.status === 'completed' ? '✓' : String(idx + 1);
+      const stepClass = `auditor-progress__item-step${block.status === 'completed' ? ' auditor-progress__item-step--done' : ''}`;
 
       li.innerHTML = `
         <div class="auditor-progress__item-info">
-          <span class="auditor-progress__item-step">${idx + 1}</span>
+          <span class="${stepClass}">${stepContent}</span>
           <div class="auditor-progress__item-texts">
             <span class="auditor-progress__item-label">${escapeHtml(block.label || block.id)}</span>
             <span class="auditor-progress__item-status">${escapeHtml(statusLabel)}</span>
@@ -994,8 +1006,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function canViewAuditReport(block, state) {
     if (!block) return false;
-    if (block.summary && block.summary.trim().length) return true;
-    return block.status === 'completed' || block.id === state.active_block_id;
+    return !!(block.summary && block.summary.trim().length);
   }
 
   function canCompleteAuditBlock(block, state) {
@@ -1034,6 +1045,12 @@ document.addEventListener('DOMContentLoaded', function () {
   async function handleCompleteAuditBlock(blockId, buttonEl) {
     if (!currentChatThreadId) {
       addSystemMessageToChat('Necesitas iniciar una conversacion antes de marcar bloques.');
+      return;
+    }
+
+    const _blockForConfirm = (auditProgressState?.blocks || []).find(b => b.id === blockId);
+    const _blockLabel = _blockForConfirm?.label || blockId;
+    if (!confirm(`¿Confirmas que el bloque "${_blockLabel}" está completado?\nEsta acción no se puede deshacer.`)) {
       return;
     }
 
@@ -1103,7 +1120,7 @@ document.addEventListener('DOMContentLoaded', function () {
     adjustUserInputHeight();
     inputAreaWrapperEl.style.display = 'block';
 
-    const messagesToShow = currentConversationMessages.slice(-5);
+    const messagesToShow = currentConversationMessages.slice(-15);
     chatMessagesEl.innerHTML = '';
 
     if (!messagesToShow.length) {
@@ -1261,7 +1278,10 @@ document.addEventListener('DOMContentLoaded', function () {
       removeTypingIndicatorFromChat();
       if (!resp.ok) {
         const err = await resp.json().catch(()=>({error:"Error de red", details:`Status ${resp.status}`}));
-        addSystemMessageToChat(`Error del servidor: ${err.error || resp.statusText}.`);
+        currentConversationMessages.pop();
+        userInputEl.value = messageText;
+        adjustUserInputHeight();
+        addSystemMessageToChat(`Error del servidor: ${err.error || resp.statusText}. Tu mensaje ha sido restaurado.`);
         userInputEl.focus();
         return;
       }
@@ -1284,7 +1304,10 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     } catch (e) {
       removeTypingIndicatorFromChat();
-      addSystemMessageToChat("No se pudo conectar con el servidor.");
+      currentConversationMessages.pop();
+      userInputEl.value = messageText;
+      adjustUserInputHeight();
+      addSystemMessageToChat("No se pudo conectar con el servidor. Tu mensaje ha sido restaurado.");
       console.error("fetch error:", e);
       userInputEl.focus();
     }
@@ -1297,7 +1320,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Render markdown then replace [N] with clickable+hoverable superscript badges
     const fallback = "El asistente no proporcionó una respuesta textual.";
-    let html = window.marked ? marked.parse(responseText || fallback) : (responseText || fallback);
+    const _rawHtml = window.marked ? marked.parse(responseText || fallback) : (responseText || fallback);
+    let html = window.DOMPurify ? DOMPurify.sanitize(_rawHtml) : _rawHtml;
     html = html.replace(/\[(\d+)\]/g, (_, n) => {
       const src = (sourcesList || []).find(s => String(s.index) === n);
       const ttTitle = src
@@ -1307,6 +1331,10 @@ document.addEventListener('DOMContentLoaded', function () {
       return `<sup class="citation-inline" data-ref="${n}" data-tt-title="${ttTitle}" data-tt-excerpt="${ttExcerpt}">[${n}]</sup>`;
     });
     main.innerHTML = html;
+    const _timeEl = document.createElement('time');
+    _timeEl.className = 'message-time';
+    _timeEl.textContent = _formatMsgTime(new Date());
+    main.appendChild(_timeEl);
     wrap.appendChild(main);
 
     if (sourcesList && sourcesList.length) {
@@ -1350,19 +1378,32 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Wire up inline badges → scroll to citation card
     wrap.querySelectorAll('.citation-inline').forEach(badge => {
-      badge.addEventListener('click', () => {
+      badge.tabIndex = 0;
+      badge.setAttribute('role', 'button');
+      const _activateCitation = () => {
         const target = wrap.querySelector(`.citation-item[data-idx="${badge.dataset.ref}"]`);
         if (target) { target.scrollIntoView({behavior:'smooth',block:'nearest'}); target.classList.add('citation-highlight'); setTimeout(()=>target.classList.remove('citation-highlight'), 1200); }
-      });
+      };
+      badge.addEventListener('click', _activateCitation);
+      badge.addEventListener('keydown', (e) => { if (e.key==='Enter'||e.key===' ') { e.preventDefault(); _activateCitation(); } });
     });
 
     scrollChatToBottom();
+  }
+  function _formatMsgTime(date) {
+    try { return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }); }
+    catch (_) { return ''; }
   }
   function addMessageToChatDOM(html, cls){
     const el = document.createElement('div'); el.classList.add('message', cls); el.innerHTML = html;
     chatMessagesEl.appendChild(el); scrollChatToBottom();
   }
-  function addUserMessageToChat(t){ const s=t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); addMessageToChatDOM(s,'user-message'); }
+  function addUserMessageToChat(t){
+    const s=t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    const el=document.createElement('div'); el.classList.add('message','user-message');
+    el.innerHTML=`${s}<time class="message-time">${_formatMsgTime(new Date())}</time>`;
+    chatMessagesEl.appendChild(el); scrollChatToBottom();
+  }
   function addSystemMessageToChat(t){ const s=t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); addMessageToChatDOM(s,'system-message'); }
   function addAssistantMessageInternal(html){ const el=document.createElement('div'); el.classList.add('message','assistant-message'); el.innerHTML=`<div class="main-assistant-text">${html}</div>`; chatMessagesEl.appendChild(el); scrollChatToBottom(); }
   function escapeHtml(u){ if(!u) return ''; return u.toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;"); }
@@ -1416,15 +1457,26 @@ document.addEventListener('DOMContentLoaded', function () {
   userInputEl?.addEventListener('input', debounce(adjustUserInputHeight, 60)); adjustUserInputHeight();
 
   let typingIndicatorDiv=null;
+  let _typingProgressTimer=null;
   function showTypingIndicatorToChat(){
     if(typingIndicatorDiv) return;
     typingIndicatorDiv=document.createElement('div');
     typingIndicatorDiv.classList.add('message','assistant-message','typing-indicator');
-    typingIndicatorDiv.innerHTML='<div class="typing-dots"><span></span><span></span><span></span></div>';
+    typingIndicatorDiv.innerHTML='<div class="typing-dots"><span></span><span></span><span></span></div><p class="typing-progress-msg" style="display:none;margin:.35rem 0 0;font-size:.78rem;color:var(--texto-gris-sutil);"></p>';
     chatMessagesEl.appendChild(typingIndicatorDiv);
     scrollChatToBottom({ behavior: 'smooth' });
+    const msgEl = typingIndicatorDiv.querySelector('.typing-progress-msg');
+    _typingProgressTimer = setTimeout(() => {
+      if (msgEl) { msgEl.textContent = 'Generando respuesta...'; msgEl.style.display = ''; }
+      _typingProgressTimer = setTimeout(() => {
+        if (msgEl) msgEl.textContent = 'Esto puede tardar un momento más...';
+      }, 25000);
+    }, 12000);
   }
-  function removeTypingIndicatorFromChat(){ if(typingIndicatorDiv){ typingIndicatorDiv.remove(); typingIndicatorDiv=null; } }
+  function removeTypingIndicatorFromChat(){
+    if(_typingProgressTimer){ clearTimeout(_typingProgressTimer); _typingProgressTimer=null; }
+    if(typingIndicatorDiv){ typingIndicatorDiv.remove(); typingIndicatorDiv=null; }
+  }
 
   function scrollChatToBottom(options){
     if (!chatMessagesEl) return;
