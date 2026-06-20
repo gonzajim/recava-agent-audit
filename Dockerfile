@@ -1,7 +1,9 @@
 # Dockerfile
 
 # ---- Builder Stage ----
-FROM python:3.10-slim as builder
+# Digest fijado: evita que actualizaciones de Docker Hub invaliden el cache de capas.
+# Para actualizar Python: ejecuta `docker pull python:3.10-slim`, copia el nuevo digest.
+FROM python:3.10-slim@sha256:09304d54d98baaa86d14fce52a168ee32b712e20e4e82f7ec168799aa6060fd1 as builder
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -9,19 +11,22 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_DEFAULT_TIMEOUT=100
 
-# Instalar dependencias del sistema
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app-build
 
-# Copiar requirements.txt para aprovechar el cache de Docker
-COPY requirements.txt requirements.txt
-
-# Crear y activar un entorno virtual, luego instalar dependencias
+# --- Capa 1: torch CPU-only (pesada, raramente cambia) ---
+# --index-url fuerza CPU wheels del servidor de PyTorch (~200MB vs ~532MB CUDA en PyPI).
+# Capa separada: si requirements.txt cambia, esta capa sigue cacheada.
 RUN python3 -m venv /opt/venv && \
-    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+    /opt/venv/bin/pip install --no-cache-dir torch \
+      --index-url https://download.pytorch.org/whl/cpu
+
+# --- Capa 2: resto de dependencias (cambia con más frecuencia) ---
+COPY requirements.txt requirements.txt
+RUN /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
 # ---- Final Stage ----
 FROM python:3.10-slim
@@ -33,26 +38,17 @@ ENV PYTHONUNBUFFERED=1 \
 ARG APP_USER_UID=1000
 ARG APP_USER_GID=1000
 
-# Instalar dependencias mínimas de runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Crear un usuario no root
 RUN groupadd --gid ${APP_USER_GID} appgroup && \
     useradd --uid ${APP_USER_UID} --gid ${APP_USER_GID} --create-home --shell /sbin/nologin appuser
 
-# Copiar el entorno virtual del builder stage
 COPY --from=builder --chown=appuser:appgroup /opt/venv /opt/venv
 
 WORKDIR /app
 
-# ========================================================================
-# --- CORRECCIÓN ---
-# Copiamos app.py desde la raíz.
-# Copiamos todo el directorio 'src' a la imagen.
-# Esto soluciona el error ya que config.py está dentro de src.
-# ========================================================================
 COPY --chown=appuser:appgroup app.py ./
 COPY --chown=appuser:appgroup src/ ./src/
 
@@ -63,5 +59,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
-# Comando para ejecutar la aplicación
 CMD ["sh", "-c", "/opt/venv/bin/gunicorn app:app --bind \"0.0.0.0:${PORT}\" --workers 4 --timeout 120 --access-logfile - --error-logfile -"]

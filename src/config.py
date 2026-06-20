@@ -2,7 +2,6 @@
 import os
 import logging
 from flask import Flask
-from flask_cors import CORS
 from google.cloud import bigquery
 from google import genai
 from pinecone import Pinecone as PineconeClient
@@ -10,9 +9,8 @@ from sentence_transformers import SentenceTransformer
 
 # --- 1. Flask ---
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True,
-     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-     allow_headers=["Content-Type", "Authorization", "X-Requested-With"])
+# CORS is configured in app.py with specific allowed origins (supports_credentials=True
+# is incompatible with wildcard origin, so it must use an explicit list)
 
 # --- 2. Logging ---
 logger = logging.getLogger(__name__)
@@ -72,6 +70,12 @@ try:
     )
     embed_model = SentenceTransformer(_EMBEDDING_MODEL_NAME)
     logger.info("SentenceTransformer '%s' loaded.", _EMBEDDING_MODEL_NAME)
+
+    # In-memory FAISS store — one per session, keyed by thread_id.
+    # Imported here after sentence-transformers to keep model warm before FAISS init.
+    from src.local_vector_store import LocalVectorStore
+    local_store = LocalVectorStore(dim=384)
+    logger.info("LocalVectorStore (FAISS) initialised (max_sessions=%d).", local_store._max)
 
 except Exception as e:
     logger.critical("Failed to initialize external clients: %s", e, exc_info=True)

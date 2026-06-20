@@ -6,6 +6,8 @@
 # Migration path (when ready to re-index corpus):
 #   Set EMBEDDING_MODEL_NAME=paraphrase-multilingual-MiniLM-L12-v2 (still 384 dims,
 #   multilingual, better Spanish quality) and re-run the ingestion pipeline.
+import io
+import os
 import uuid
 from src.config import logger
 
@@ -60,6 +62,8 @@ def search_documents(
                 "title": meta.get("source") or meta.get("title", ""),
                 "category": meta.get("primary_category", ""),
                 "score": score,
+                "page": meta.get("page"),
+                "total_pages": meta.get("total_pages"),
             })
 
         return results[:_MAX_RESULTS]
@@ -102,3 +106,229 @@ def ingest_document(
     }])
     logger.info("Ingested document '%s' into Pinecone.", doc_id)
     return doc_id
+
+
+# ---------------------------------------------------------------------------
+# Category filter (shared with context_orchestrator to avoid circular import)
+# ---------------------------------------------------------------------------
+
+_CSDDD_TERMS = {
+    "csddd", "diligencia debida", "cadena de actividades", "impactos adversos",
+    "impacto adverso", "reparación", "reclamacion", "reclamación", "socio comercial",
+    "due diligence", "conducta empresarial responsable",
+}
+_GRI_TERMS = {
+    "gri", "global reporting initiative", "estándar gri", "estandar gri",
+    "contenido gri", "indicador gri",
+}
+
+
+def detect_category_filter(query: str) -> dict | None:
+    """
+    Returns a Pinecone metadata filter based on keyword signals.
+    Corpus categories: 'CSDDD', 'GRI', 'general'.
+
+    - Clear GRI query → ['GRI', 'general']
+    - Clear CSDDD query (≥2 hits) → ['CSDDD', 'general']
+    - Mixed/CSRD/unknown → None (search all)
+    """
+    q = query.lower()
+    hits_csddd = sum(1 for t in _CSDDD_TERMS if t in q)
+    hits_gri = sum(1 for t in _GRI_TERMS if t in q)
+    if hits_gri >= 1 and hits_csddd == 0:
+        return {"primary_category": {"$in": ["GRI", "general"]}}
+    if hits_csddd >= 2 and hits_gri == 0:
+        return {"primary_category": {"$in": ["CSDDD", "general"]}}
+    return None
+
+
+# ---------------------------------------------------------------------------
+# PDF extraction + chunking (for /upload_document endpoint)
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Question-type routing
+# ---------------------------------------------------------------------------
+
+_RESOURCE_SIGNALS = [
+    "cuáles son los", "qué herramientas", "qué sellos", "qué iniciativas",
+    "qué certificaciones", "principales sellos", "herramientas informáticas",
+    "qué beneficios ofrece", "qué parámetros",
+]
+_OPERATIONAL_SIGNALS = [
+    "cómo hago", "qué pasos", "qué documentos", "documentos debo", "cómo evalúo",
+    "cómo creo", "qué requisitos", "qué normativa debo", "qué obligaciones tengo",
+    "cómo manejar", "cómo introduc", "cómo puedo introduc", "cómo redu",
+    "qué condiciones", "para cumplir", "para lograr", "qué obligaciones",
+    "qué requisitos impone", "cómo se aplica", "qué pasos se requieren",
+    "mapa de riesgos", "cuestionario de auditoría",
+]
+_CONCEPTUAL_SIGNALS = [
+    "qué es", "qué son", "qué implica", "qué introduce", "qué cambios introduce",
+    "cómo funciona", "en qué consiste", "explica", "explicar", "explicame",
+    "podrías explicar", "podrías detallar", "describe", "visión general",
+    "relación con", "se alinea con",
+]
+_ROUTING = {
+    "resource": "hybrid",
+    "operational": "hybrid",
+    "conceptual": "semantic",
+    "unknown": "semantic",
+}
+
+
+def classify_question(query: str) -> str:
+    """Returns 'resource', 'operational', 'conceptual', or 'unknown'."""
+    q = query.lower()
+    if any(s in q for s in _RESOURCE_SIGNALS):
+        return "resource"
+    if any(s in q for s in _OPERATIONAL_SIGNALS):
+        return "operational"
+    if any(s in q for s in _CONCEPTUAL_SIGNALS):
+        return "conceptual"
+    return "unknown"
+
+
+def get_routing_strategy(question_type: str) -> str:
+    """Returns 'hybrid' (Pinecone + Neo4j) or 'semantic' (Pinecone only)."""
+    return _ROUTING.get(question_type, "semantic")
+
+
+# ---------------------------------------------------------------------------
+# Neo4j graph retrieval (GraphRAG)
+# ---------------------------------------------------------------------------
+
+_CANONICAL_ENTITIES = sorted([
+    "CSDDD", "CSRD", "EUDR", "ESRS", "REACH", "EMAS",
+    "GRI", "OIT", "OCDE", "ISO 26000", "Basilea",
+    "Directiva de Debida Diligencia", "Directiva de Deforestación",
+    "due diligence", "diligencia debida",
+    "cadena de suministro", "cadena de valor",
+    "derechos humanos", "trabajo forzoso",
+    "sostenibilidad", "greenwashing",
+    "deforestación", "biodiversidad",
+    "huella de carbono", "emisiones GEI", "neutralidad carbono",
+    "comercio justo", "ecodiseño",
+    "certificación", "auditoría social",
+    "salario adecuado", "protección social",
+    "brecha salarial", "igualdad de género",
+    "economía circular", "residuos peligrosos",
+    "pesca sostenible", "productos orgánicos",
+    "sustancias químicas", "embalajes",
+], key=len, reverse=True)
+
+_neo4j_driver = None
+
+
+def _get_neo4j_driver():
+    global _neo4j_driver
+    if _neo4j_driver is not None:
+        return _neo4j_driver
+    uri = os.getenv("NEO4J_URI")
+    user = os.getenv("NEO4J_USERNAME", "neo4j")
+    pwd = os.getenv("NEO4J_PASSWORD")
+    if not uri or not pwd:
+        return None
+    try:
+        from neo4j import GraphDatabase
+        _neo4j_driver = GraphDatabase.driver(uri, auth=(user, pwd))
+        logger.info("Neo4j driver initialized (uri=%s).", uri)
+    except Exception as exc:
+        logger.error("Neo4j driver init failed: %s", exc)
+    return _neo4j_driver
+
+
+def _extract_entities(query: str) -> list:
+    q = query.lower()
+    return [e for e in _CANONICAL_ENTITIES if e.lower() in q]
+
+
+_GRAPH_CYPHER = """
+MATCH (n:Entity)
+WHERE any(e IN $entities WHERE toLower(n.name) CONTAINS toLower(e))
+OPTIONAL MATCH (n)-[r:RELATED]->(related:Entity)
+RETURN n.name AS subject, r.predicate AS relation, related.name AS object
+ORDER BY n.name
+LIMIT 40
+"""
+
+
+def get_graph_context(query: str, char_budget: int = 6000) -> str:
+    """
+    Retrieves relationship triples from Neo4j for canonical entities found in query.
+    Returns empty string if Neo4j is not configured or no entities match.
+    """
+    driver = _get_neo4j_driver()
+    if not driver:
+        return ""
+
+    entities = _extract_entities(query)
+    if not entities:
+        logger.info("Graph RAG: no canonical entities detected in query.")
+        return ""
+
+    db = os.getenv("NEO4J_DATABASE", "neo4j")
+    logger.info("Graph RAG: entities=%s db=%s", entities, db)
+    try:
+        with driver.session(database=db) as session:
+            results = session.run(_GRAPH_CYPHER, entities=entities)
+            seen: set = set()
+            triples: list = []
+            for record in results:
+                subj = record["subject"] or ""
+                rel = record["relation"] or ""
+                obj = record["object"] or ""
+                line = f"{subj} --[{rel}]--> {obj}" if rel else subj
+                if line not in seen:
+                    seen.add(line)
+                    triples.append(line)
+
+        if not triples:
+            logger.info("Graph RAG: no triples found for entities=%s", entities)
+            return ""
+
+        body = "RELACIONES JURÍDICAS EN EL GRAFO DE CONOCIMIENTO:\n" + "\n".join(triples)
+        logger.info("Graph RAG: %d triples recovered.", len(triples))
+        return body[:char_budget]
+
+    except Exception:
+        logger.error("Graph RAG query failed", exc_info=True)
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# PDF extraction + chunking (for /upload_document endpoint)
+# ---------------------------------------------------------------------------
+
+_CHUNK_WORDS = 400
+_CHUNK_OVERLAP = 50
+_MAX_CHUNKS = 500   # guard against very large PDFs
+
+
+def extract_pdf_chunks(file_bytes: bytes, chunk_words: int = _CHUNK_WORDS, overlap: int = _CHUNK_OVERLAP) -> list[str]:
+    """
+    Extracts text from a PDF byte string and splits it into overlapping chunks.
+    Uses pypdf (pure Python, no system deps).
+    Returns a list of non-empty text strings (up to _MAX_CHUNKS).
+    """
+    from pypdf import PdfReader
+
+    reader = PdfReader(io.BytesIO(file_bytes))
+    all_words: list[str] = []
+    for page in reader.pages:
+        text = page.extract_text() or ""
+        all_words.extend(text.split())
+
+    if not all_words:
+        return []
+
+    chunks = []
+    step = chunk_words - overlap
+    for start in range(0, len(all_words), step):
+        chunk = " ".join(all_words[start : start + chunk_words])
+        if chunk.strip():
+            chunks.append(chunk)
+        if len(chunks) >= _MAX_CHUNKS:
+            break
+
+    return chunks

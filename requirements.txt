@@ -16,9 +16,16 @@ pinecone
 # — requiere re-indexar el corpus Pinecone con el nuevo modelo.
 sentence-transformers
 
+# --- RAG híbrido local (FAISS + extracción PDF) ---
+faiss-cpu     # índice vectorial en RAM por sesión (cosine sobre IndexFlatIP con L2-norm)
+pypdf         # extracción de texto de PDFs subidos por el usuario
+
 # --- Utilidades ---
 python-dotenv
 firebase-admin
 
 # --- Clientes de Google Cloud ---
 google-cloud-bigquery
+
+# --- Grafo de conocimiento (GraphRAG) ---
+neo4j>=5.20.0

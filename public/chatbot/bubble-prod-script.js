@@ -87,6 +87,38 @@ document.addEventListener('DOMContentLoaded', function () {
   const registerButtonEl = document.getElementById('register-button');
   const loginErrorEl = document.getElementById('login-error');
 
+  // Inject "Olvidé mi contraseña" link below the buttons in the login box
+  (() => {
+    const loginBox = document.querySelector('#login-view .login-box, #login-container .login-box');
+    const errEl = loginBox?.querySelector('.error-message, #login-error');
+    if (loginBox && errEl) {
+      const link = document.createElement('button');
+      link.className = 'forgot-password-link';
+      link.type = 'button';
+      link.textContent = '¿Olvidaste tu contraseña?';
+      link.addEventListener('click', async () => {
+        const email = emailInputEl?.value?.trim();
+        if (!email) {
+          loginErrorEl.textContent = 'Introduce tu email arriba para recibir el enlace.';
+          loginErrorEl.classList.remove('is-success');
+          loginErrorEl.style.display = 'block';
+          return;
+        }
+        try {
+          await auth.sendPasswordResetEmail(email);
+          loginErrorEl.textContent = 'Te hemos enviado un enlace para restablecer tu contraseña.';
+          loginErrorEl.classList.add('is-success');
+          loginErrorEl.style.display = 'block';
+        } catch (err) {
+          loginErrorEl.textContent = _fbMsg(err);
+          loginErrorEl.classList.remove('is-success');
+          loginErrorEl.style.display = 'block';
+        }
+      });
+      loginBox.insertBefore(link, errEl);
+    }
+  })();
+
   const chatBubbleEl = document.getElementById('chat-bubble');
   const chatWidgetContainerEl = document.getElementById('chat-widget-container');
   const chatCloseButtonEl = document.getElementById('chat-close-button');
@@ -100,6 +132,24 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Accesibilidad log
   if (chatMessagesEl) { chatMessagesEl.setAttribute('aria-live','polite'); chatMessagesEl.setAttribute('role','log'); }
+
+  // Scroll-to-bottom button
+  let scrollToBottomBtn = null;
+  if (chatWrapperEl) {
+    scrollToBottomBtn = document.createElement('button');
+    scrollToBottomBtn.id = 'scroll-to-bottom-btn';
+    scrollToBottomBtn.title = 'Ir al final';
+    scrollToBottomBtn.innerHTML = '&#8595;';
+    scrollToBottomBtn.setAttribute('aria-label', 'Ir al final del chat');
+    chatWrapperEl.appendChild(scrollToBottomBtn);
+    scrollToBottomBtn.addEventListener('click', () => scrollChatToBottom({ behavior: 'smooth' }));
+  }
+  function _updateScrollBtn() {
+    if (!chatMessagesEl || !scrollToBottomBtn) return;
+    const distFromBottom = chatMessagesEl.scrollHeight - chatMessagesEl.scrollTop - chatMessagesEl.clientHeight;
+    scrollToBottomBtn.classList.toggle('visible', distFromBottom > 120);
+  }
+  chatMessagesEl?.addEventListener('scroll', debounce(_updateScrollBtn, 80));
 
   const AUDIT_BLOCKS_DEFINITION = [
     { id: 'block_1', label: '1. Contexto y Alcance' },
@@ -164,6 +214,24 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // ===================== 3) HELPERS VERIFICACIÓN =====================
+  // Firebase Auth error code → Spanish message
+  const _fbErrors = {
+    'auth/email-already-in-use':   'Ese correo ya tiene una cuenta. Inicia sesión o recupera tu contraseña.',
+    'auth/invalid-email':          'El formato del correo no es válido.',
+    'auth/weak-password':          'La contraseña debe tener al menos 6 caracteres.',
+    'auth/user-not-found':         'No existe ninguna cuenta con ese correo.',
+    'auth/wrong-password':         'Contraseña incorrecta.',
+    'auth/invalid-credential':     'Correo o contraseña incorrectos.',
+    'auth/user-disabled':          'Esta cuenta ha sido deshabilitada. Contacta con el administrador.',
+    'auth/too-many-requests':      'Demasiados intentos fallidos. Espera unos minutos e inténtalo de nuevo.',
+    'auth/network-request-failed': 'Error de red. Comprueba tu conexión e inténtalo de nuevo.',
+    'auth/operation-not-allowed':  'El registro no está habilitado. Contacta con el administrador.',
+    'auth/requires-recent-login':  'Por seguridad, cierra sesión, vuelve a entrar y repite la operación.',
+  };
+  function _fbMsg(err) {
+    return _fbErrors[err?.code] || err?.message || 'Error inesperado. Inténtalo de nuevo.';
+  }
+
   async function sendVerificationIfNeeded(user) {
     try { if (user && !user.emailVerified) await user.sendEmailVerification(); }
     catch(e){ console.error('No se pudo enviar verificación:', e); }
@@ -225,7 +293,7 @@ document.addEventListener('DOMContentLoaded', function () {
         loginErrorEl.style.display = 'block';
       }
     } catch (err) {
-      loginErrorEl.textContent = "Error: " + (err?.message || "Operación no completada");
+      loginErrorEl.textContent = _fbMsg(err);
       loginErrorEl.style.display = 'block';
     }
   });
@@ -273,40 +341,59 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // ===================== 6) LOGIN / REGISTRO =====================
   loginButtonEl?.addEventListener('click', async () => {
-    const email = emailInputEl.value, password = passwordInputEl.value;
+    const email = emailInputEl.value.trim(), password = passwordInputEl.value;
     if (!email || !password) {
       loginErrorEl.textContent = "Por favor, introduce email y contraseña.";
       loginErrorEl.style.display = 'block'; return;
     }
+    loginButtonEl.disabled = true;
+    loginButtonEl.textContent = 'Iniciando sesión...';
     try {
       const cred = await auth.signInWithEmailAndPassword(email, password);
+      loginErrorEl.classList.remove('is-success');
       if (!cred.user.emailVerified) {
         verifyBanner.style.display = 'block';
         loginErrorEl.textContent = "Debes verificar tu correo antes de usar el chat.";
         loginErrorEl.style.display = 'block';
       }
     } catch (err) {
-      const msg = String(err?.message || "");
-      loginErrorEl.textContent = "Error: " + msg;
+      loginErrorEl.textContent = _fbMsg(err);
+      loginErrorEl.classList.remove('is-success');
       loginErrorEl.style.display = 'block';
+    } finally {
+      loginButtonEl.disabled = false;
+      loginButtonEl.textContent = 'Entrar';
     }
   });
 
   registerButtonEl?.addEventListener('click', async () => {
-    const email = emailInputEl.value, password = passwordInputEl.value;
+    const email = emailInputEl.value.trim(), password = passwordInputEl.value;
     if (!email || !password) {
       loginErrorEl.textContent = "Por favor, introduce email y contraseña.";
       loginErrorEl.style.display = 'block'; return;
     }
+    registerButtonEl.disabled = true;
+    registerButtonEl.textContent = 'Creando cuenta...';
     try {
       const cred = await auth.createUserWithEmailAndPassword(email, password);
-      await sendVerificationIfNeeded(cred.user);
-      loginErrorEl.textContent = "Cuenta creada. Te hemos enviado un email para verificarla.";
+      let msg = "¡Cuenta creada!";
+      try {
+        await cred.user.sendEmailVerification();
+        msg += " Te hemos enviado un email de verificación.";
+      } catch (_) {
+        msg += " No pudimos enviar el email de verificación — usa el botón 'Reenviar verificación'.";
+      }
+      loginErrorEl.textContent = msg;
+      loginErrorEl.classList.add('is-success');
       loginErrorEl.style.display = 'block';
       verifyBanner.style.display = 'block';
     } catch (err) {
-      loginErrorEl.textContent = "Error: " + (err?.message || "No se pudo registrar");
+      loginErrorEl.textContent = _fbMsg(err);
+      loginErrorEl.classList.remove('is-success');
       loginErrorEl.style.display = 'block';
+    } finally {
+      registerButtonEl.disabled = false;
+      registerButtonEl.textContent = 'Registrarse';
     }
   });
 
@@ -337,8 +424,9 @@ document.addEventListener('DOMContentLoaded', function () {
     // Fila 1: bienvenida
     const welcome = document.createElement('div');
     welcome.className = 'welcome-banner';
+    const displayName = (currentUser.displayName || currentUser.email || '').split('@')[0] || 'usuario';
     welcome.innerHTML =
-      `¡Hola ${currentUser.email}! Somos tus auditores legales especializados en Diligencia Debida en materia de Sostenibilidad.<br/>
+      `¡Hola, <strong>${displayName}</strong>! Somos tus auditores legales especializados en Diligencia Debida en materia de Sostenibilidad.<br/>
        <strong>Elige el modo en el que quieres interactuar:</strong>`;
     selectionContainer.appendChild(welcome);
 
@@ -461,7 +549,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const title = document.createElement('h2');
     title.className = 'history-title';
-    title.textContent = 'Tus ultimas conversaciones';
+    title.textContent = 'Tus últimas conversaciones';
 
     const subtitle = document.createElement('p');
     subtitle.className = 'history-subtitle';
@@ -846,10 +934,12 @@ document.addEventListener('DOMContentLoaded', function () {
       li.dataset.blockId = block.id;
 
       const statusLabel = formatAuditBlockStatus(block.status, isActive);
+      const stepContent = block.status === 'completed' ? '✓' : String(idx + 1);
+      const stepClass = `auditor-progress__item-step${block.status === 'completed' ? ' auditor-progress__item-step--done' : ''}`;
 
       li.innerHTML = `
         <div class="auditor-progress__item-info">
-          <span class="auditor-progress__item-step">${idx + 1}</span>
+          <span class="${stepClass}">${stepContent}</span>
           <div class="auditor-progress__item-texts">
             <span class="auditor-progress__item-label">${escapeHtml(block.label || block.id)}</span>
             <span class="auditor-progress__item-status">${escapeHtml(statusLabel)}</span>
@@ -916,8 +1006,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function canViewAuditReport(block, state) {
     if (!block) return false;
-    if (block.summary && block.summary.trim().length) return true;
-    return block.status === 'completed' || block.id === state.active_block_id;
+    return !!(block.summary && block.summary.trim().length);
   }
 
   function canCompleteAuditBlock(block, state) {
@@ -956,6 +1045,12 @@ document.addEventListener('DOMContentLoaded', function () {
   async function handleCompleteAuditBlock(blockId, buttonEl) {
     if (!currentChatThreadId) {
       addSystemMessageToChat('Necesitas iniciar una conversacion antes de marcar bloques.');
+      return;
+    }
+
+    const _blockForConfirm = (auditProgressState?.blocks || []).find(b => b.id === blockId);
+    const _blockLabel = _blockForConfirm?.label || blockId;
+    if (!confirm(`¿Confirmas que el bloque "${_blockLabel}" está completado?\nEsta acción no se puede deshacer.`)) {
       return;
     }
 
@@ -1025,7 +1120,7 @@ document.addEventListener('DOMContentLoaded', function () {
     adjustUserInputHeight();
     inputAreaWrapperEl.style.display = 'block';
 
-    const messagesToShow = currentConversationMessages.slice(-5);
+    const messagesToShow = currentConversationMessages.slice(-15);
     chatMessagesEl.innerHTML = '';
 
     if (!messagesToShow.length) {
@@ -1183,7 +1278,10 @@ document.addEventListener('DOMContentLoaded', function () {
       removeTypingIndicatorFromChat();
       if (!resp.ok) {
         const err = await resp.json().catch(()=>({error:"Error de red", details:`Status ${resp.status}`}));
-        addSystemMessageToChat(`Error del servidor: ${err.error || resp.statusText}.`);
+        currentConversationMessages.pop();
+        userInputEl.value = messageText;
+        adjustUserInputHeight();
+        addSystemMessageToChat(`Error del servidor: ${err.error || resp.statusText}. Tu mensaje ha sido restaurado.`);
         userInputEl.focus();
         return;
       }
@@ -1191,7 +1289,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (data.thread_id) currentChatThreadId = data.thread_id;
       if (data.response) {
         const cleaned = data.response.replace(/【.*?†source】/g,'').trim();
-        addAssistantMessageWithCitations(cleaned, data.citations || []);
+        addAssistantMessageWithCitations(cleaned, data.sources || []);
         currentConversationMessages.push({
           role: 'assistant',
           text: cleaned,
@@ -1206,40 +1304,148 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     } catch (e) {
       removeTypingIndicatorFromChat();
-      addSystemMessageToChat("No se pudo conectar con el servidor.");
+      currentConversationMessages.pop();
+      userInputEl.value = messageText;
+      adjustUserInputHeight();
+      addSystemMessageToChat("No se pudo conectar con el servidor. Tu mensaje ha sido restaurado.");
       console.error("fetch error:", e);
       userInputEl.focus();
     }
   }
 
   // ===================== 10) AUXILIARES UI =====================
-  function addAssistantMessageWithCitations(responseText, citationsList){
+  function addAssistantMessageWithCitations(responseText, sourcesList){
     const wrap = document.createElement('div'); wrap.classList.add('message','assistant-message');
     const main = document.createElement('div'); main.classList.add('main-assistant-text');
-    main.innerHTML = (window.marked ? marked.parse(responseText || "El asistente no proporcionó una respuesta textual.") : (responseText || "El asistente no proporcionó una respuesta textual."));
+
+    // Render markdown then replace [N] with clickable+hoverable superscript badges
+    const fallback = "El asistente no proporcionó una respuesta textual.";
+    const _rawHtml = window.marked ? marked.parse(responseText || fallback) : (responseText || fallback);
+    let html = window.DOMPurify ? DOMPurify.sanitize(_rawHtml) : _rawHtml;
+    html = html.replace(/\[(\d+)\]/g, (_, n) => {
+      const src = (sourcesList || []).find(s => String(s.index) === n);
+      const ttTitle = src
+        ? escapeHtml(`${src.title}${src.page != null ? ` · p.${src.page}${src.total_pages ? '/' + src.total_pages : ''}` : ''}${src.category ? ' · ' + src.category : ''}`)
+        : '';
+      const ttExcerpt = src ? escapeHtml(src.excerpt || '') : '';
+      return `<sup class="citation-inline" data-ref="${n}" data-tt-title="${ttTitle}" data-tt-excerpt="${ttExcerpt}">[${n}]</sup>`;
+    });
+    main.innerHTML = html;
+    const _timeEl = document.createElement('time');
+    _timeEl.className = 'message-time';
+    _timeEl.textContent = _formatMsgTime(new Date());
+    main.appendChild(_timeEl);
     wrap.appendChild(main);
-    if (citationsList && citationsList.length){
-      const cont = document.createElement('div'); cont.classList.add('citations-container');
-      citationsList.forEach(c=>{
-        const item = document.createElement('div'); item.classList.add('citation-item');
-        let html = `<span class="citation-marker">${escapeHtml(c.marker || '[?]')}</span>`;
-        html += `<span class="citation-quote">${escapeHtml(c.quote_from_file || 'Contenido no disponible.')}</span>`;
-        if (c.file_id) html += `<span class="citation-file-id">ID Archivo: ${escapeHtml(c.file_id)}</span>`;
-        item.innerHTML = html; cont.appendChild(item);
+
+    if (sourcesList && sourcesList.length) {
+      const cont = document.createElement('div');
+      cont.classList.add('citations-container', 'collapsed');
+
+      const toggle = document.createElement('div');
+      toggle.classList.add('citations-toggle');
+      toggle.innerHTML =
+        `<span class="citations-label">Fuentes documentales (${sourcesList.length})</span>` +
+        `<span class="citations-toggle__arrow">▼</span>`;
+      toggle.addEventListener('click', () => cont.classList.toggle('collapsed'));
+      cont.appendChild(toggle);
+
+      const list = document.createElement('div');
+      list.classList.add('citations-list');
+      sourcesList.forEach(s => {
+        const item = document.createElement('div');
+        item.classList.add('citation-item');
+        item.dataset.idx = String(s.index);
+
+        const scorePct = Math.round((s.score || 0) * 100);
+        const pagePart = s.page != null
+          ? ` · p.${s.page}${s.total_pages ? '/' + s.total_pages : ''}`
+          : '';
+        const catPart  = s.category ? ` · ${escapeHtml(s.category)}` : '';
+
+        item.innerHTML =
+          `<span class="citation-marker">[${s.index}]</span>` +
+          `<span class="citation-title">${escapeHtml(s.title || 'Documento')}</span>` +
+          `<span class="citation-meta">${catPart}${pagePart} · relevancia ${scorePct}%</span>` +
+          `<span class="citation-quote">${escapeHtml(s.excerpt || '')}</span>`;
+
+        list.appendChild(item);
       });
+      cont.appendChild(list);
       wrap.appendChild(cont);
     }
+
     chatMessagesEl.appendChild(wrap);
+
+    // Wire up inline badges → scroll to citation card
+    wrap.querySelectorAll('.citation-inline').forEach(badge => {
+      badge.tabIndex = 0;
+      badge.setAttribute('role', 'button');
+      const _activateCitation = () => {
+        const target = wrap.querySelector(`.citation-item[data-idx="${badge.dataset.ref}"]`);
+        if (target) { target.scrollIntoView({behavior:'smooth',block:'nearest'}); target.classList.add('citation-highlight'); setTimeout(()=>target.classList.remove('citation-highlight'), 1200); }
+      };
+      badge.addEventListener('click', _activateCitation);
+      badge.addEventListener('keydown', (e) => { if (e.key==='Enter'||e.key===' ') { e.preventDefault(); _activateCitation(); } });
+    });
+
     scrollChatToBottom();
+  }
+  function _formatMsgTime(date) {
+    try { return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }); }
+    catch (_) { return ''; }
   }
   function addMessageToChatDOM(html, cls){
     const el = document.createElement('div'); el.classList.add('message', cls); el.innerHTML = html;
     chatMessagesEl.appendChild(el); scrollChatToBottom();
   }
-  function addUserMessageToChat(t){ const s=t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); addMessageToChatDOM(s,'user-message'); }
+  function addUserMessageToChat(t){
+    const s=t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    const el=document.createElement('div'); el.classList.add('message','user-message');
+    el.innerHTML=`${s}<time class="message-time">${_formatMsgTime(new Date())}</time>`;
+    chatMessagesEl.appendChild(el); scrollChatToBottom();
+  }
   function addSystemMessageToChat(t){ const s=t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); addMessageToChatDOM(s,'system-message'); }
   function addAssistantMessageInternal(html){ const el=document.createElement('div'); el.classList.add('message','assistant-message'); el.innerHTML=`<div class="main-assistant-text">${html}</div>`; chatMessagesEl.appendChild(el); scrollChatToBottom(); }
   function escapeHtml(u){ if(!u) return ''; return u.toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;"); }
+
+  // ---- RAG chunk tooltip (hover over inline citation badge) ----
+  const _ragTip = document.createElement('div');
+  _ragTip.id = 'rag-tooltip';
+  _ragTip.style.display = 'none';
+  document.body.appendChild(_ragTip);
+
+  function _positionRagTip(badge) {
+    _ragTip.style.visibility = 'hidden';
+    _ragTip.style.display = 'block';
+    const r = badge.getBoundingClientRect();
+    const h = _ragTip.offsetHeight, w = _ragTip.offsetWidth;
+    let top = r.top - h - 10;
+    let left = r.left;
+    if (top < 8) top = r.bottom + 10;
+    if (left + w > window.innerWidth - 8) left = window.innerWidth - w - 8;
+    if (left < 8) left = 8;
+    _ragTip.style.top = top + 'px';
+    _ragTip.style.left = left + 'px';
+    _ragTip.style.visibility = 'visible';
+  }
+
+  if (chatMessagesEl) {
+    chatMessagesEl.addEventListener('mouseover', e => {
+      const b = e.target.closest('.citation-inline');
+      if (!b) return;
+      const title = b.dataset.ttTitle || '';
+      const excerpt = b.dataset.ttExcerpt || '';
+      if (!title && !excerpt) return;
+      _ragTip.innerHTML =
+        (title   ? `<div class="tt-title">${title}</div>` : '') +
+        (excerpt ? `<div class="tt-excerpt">${excerpt}</div>` : '');
+      _positionRagTip(b);
+    });
+    chatMessagesEl.addEventListener('mouseout', e => {
+      if (e.target.closest('.citation-inline')) _ragTip.style.display = 'none';
+    });
+  }
+  // ---- end RAG tooltip ----
 
   function adjustUserInputHeight(){
     userInputEl.style.height='auto';
@@ -1251,15 +1457,26 @@ document.addEventListener('DOMContentLoaded', function () {
   userInputEl?.addEventListener('input', debounce(adjustUserInputHeight, 60)); adjustUserInputHeight();
 
   let typingIndicatorDiv=null;
+  let _typingProgressTimer=null;
   function showTypingIndicatorToChat(){
     if(typingIndicatorDiv) return;
     typingIndicatorDiv=document.createElement('div');
     typingIndicatorDiv.classList.add('message','assistant-message','typing-indicator');
-    typingIndicatorDiv.textContent="Generando una respuesta...";
+    typingIndicatorDiv.innerHTML='<div class="typing-dots"><span></span><span></span><span></span></div><p class="typing-progress-msg" style="display:none;margin:.35rem 0 0;font-size:.78rem;color:var(--texto-gris-sutil);"></p>';
     chatMessagesEl.appendChild(typingIndicatorDiv);
     scrollChatToBottom({ behavior: 'smooth' });
+    const msgEl = typingIndicatorDiv.querySelector('.typing-progress-msg');
+    _typingProgressTimer = setTimeout(() => {
+      if (msgEl) { msgEl.textContent = 'Generando respuesta...'; msgEl.style.display = ''; }
+      _typingProgressTimer = setTimeout(() => {
+        if (msgEl) msgEl.textContent = 'Esto puede tardar un momento más...';
+      }, 25000);
+    }, 12000);
   }
-  function removeTypingIndicatorFromChat(){ if(typingIndicatorDiv){ typingIndicatorDiv.remove(); typingIndicatorDiv=null; } }
+  function removeTypingIndicatorFromChat(){
+    if(_typingProgressTimer){ clearTimeout(_typingProgressTimer); _typingProgressTimer=null; }
+    if(typingIndicatorDiv){ typingIndicatorDiv.remove(); typingIndicatorDiv=null; }
+  }
 
   function scrollChatToBottom(options){
     if (!chatMessagesEl) return;
@@ -1285,7 +1502,124 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
-  attachFileButtonEl?.addEventListener('click', ()=> addSystemMessageToChat("La funcionalidad de adjuntar archivos se gestiona automáticamente por el asistente."));
+  // ===================== FILE UPLOAD =====================
+  let pendingFile = null;
+
+  // Hidden file input — injected once
+  const fileInputEl = document.createElement('input');
+  fileInputEl.type = 'file';
+  fileInputEl.accept = 'application/pdf';
+  fileInputEl.style.display = 'none';
+  document.body.appendChild(fileInputEl);
+
+  // File preview row (already in HTML as #file-preview-area)
+  const filePreviewEl = document.getElementById('file-preview-area');
+  let filePreviewNameEl = null;
+  let uploadBtnEl = null;
+  if (filePreviewEl) {
+    filePreviewNameEl = filePreviewEl.querySelector('span') || (() => {
+      const s = document.createElement('span'); filePreviewEl.prepend(s); return s;
+    })();
+    uploadBtnEl = document.createElement('button');
+    uploadBtnEl.className = 'upload-pdf-btn';
+    uploadBtnEl.textContent = 'Subir PDF';
+    uploadBtnEl.type = 'button';
+    const removeBtn = filePreviewEl.querySelector('.remove-file-button');
+    filePreviewEl.insertBefore(uploadBtnEl, removeBtn || null);
+    uploadBtnEl.addEventListener('click', () => handleFileUpload());
+  }
+
+  function showFilePreview(file) {
+    pendingFile = file;
+    if (filePreviewNameEl) filePreviewNameEl.textContent = `📄 ${file.name}`;
+    filePreviewEl?.classList.add('has-file');
+  }
+  function clearFilePreview() {
+    pendingFile = null;
+    fileInputEl.value = '';
+    if (filePreviewNameEl) filePreviewNameEl.textContent = '';
+    filePreviewEl?.classList.remove('has-file');
+  }
+
+  // "Remove file" button
+  filePreviewEl?.querySelector('.remove-file-button')?.addEventListener('click', clearFilePreview);
+
+  fileInputEl.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      addSystemMessageToChat('Solo se admiten archivos PDF.');
+      fileInputEl.value = '';
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      addSystemMessageToChat('El archivo supera el límite de 20 MB.');
+      fileInputEl.value = '';
+      return;
+    }
+    showFilePreview(file);
+  });
+
+  async function handleFileUpload() {
+    if (!pendingFile) return;
+    if (!currentUser) { addSystemMessageToChat('Debes iniciar sesión para subir documentos.'); return; }
+    if (!currentChatMode) currentChatMode = 'advisor';
+
+    let token;
+    try { token = await getVerifiedIdTokenOrThrow(); }
+    catch(e) { addSystemMessageToChat(e.message || 'Necesitas verificar tu email.'); return; }
+
+    if (uploadBtnEl) { uploadBtnEl.disabled = true; uploadBtnEl.textContent = 'Subiendo…'; }
+    const fileName = pendingFile.name;
+
+    const formData = new FormData();
+    formData.append('file', pendingFile);
+    if (currentChatThreadId) formData.append('thread_id', currentChatThreadId);
+
+    const baseUrl = getOrchestratorBaseUrl();
+    try {
+      const { signal, cancel } = withTimeout(120000);
+      const resp = await fetch(`${baseUrl}/upload_document`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData,
+        signal,
+      }).finally(cancel);
+
+      const data = await parseApiResponse(resp);
+      if (data.thread_id && !currentChatThreadId) currentChatThreadId = data.thread_id;
+
+      addSystemMessageToChat(
+        `✓ ${data.chunks_indexed} fragmentos de "<strong>${escapeHtml(fileName)}</strong>" indexados. Ahora puedes hacer preguntas sobre el documento.`
+          .replace(/&lt;strong&gt;/g, '<strong>').replace(/&lt;\/strong&gt;/g, '</strong>')
+      );
+      // Show upload in messages as a system line with real HTML
+      const sysDiv = chatMessagesEl.lastElementChild;
+      if (sysDiv?.classList.contains('system-message')) {
+        sysDiv.innerHTML =
+          `✓ ${data.chunks_indexed} fragmentos de "<strong>${escapeHtml(fileName)}</strong>" indexados. ` +
+          `Ahora puedes hacer preguntas sobre el documento.`;
+      }
+
+      clearFilePreview();
+
+      // Enable chat if first interaction
+      if (!chatMessagesEl.style.display || chatMessagesEl.style.display === 'none') {
+        chatMessagesEl.style.display = 'flex';
+        sendButtonEl.disabled = false;
+        userInputEl.placeholder = 'Pregunta sobre el documento o sobre normativa...';
+      }
+    } catch (err) {
+      addSystemMessageToChat(`Error al subir el documento: ${err.message}`);
+    } finally {
+      if (uploadBtnEl) { uploadBtnEl.disabled = false; uploadBtnEl.textContent = 'Subir PDF'; }
+    }
+  }
+
+  attachFileButtonEl?.addEventListener('click', () => {
+    if (!currentUser) { addSystemMessageToChat('Debes iniciar sesión para subir documentos.'); return; }
+    fileInputEl.click();
+  });
   sendButtonEl?.addEventListener('click', handleSendMessageToServer);
   userInputEl?.addEventListener('keypress', (e)=> {
     if (e.key === 'Enter' && !e.shiftKey && !sendButtonEl.disabled) { e.preventDefault(); handleSendMessageToServer(); }

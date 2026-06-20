@@ -52,6 +52,8 @@ body {
   position: fixed; bottom: 90px; right: 20px; z-index: 1000;
   visibility: hidden; opacity: 0; transform: translateY(20px) scale(0.95);
   transition: opacity .3s ease, transform .3s ease, visibility .3s;
+  height: 600px;
+  max-height: calc(100vh - 120px);
 }
 #chat-widget-container.is-open {
   visibility: visible; opacity: 1; transform: translateY(0) scale(1);
@@ -67,6 +69,7 @@ body {
   border-radius: 10px; background-color: var(--fondo-chat);
   box-shadow: 0 5px 20px rgba(0,0,0,0.12);
   display: flex; flex-direction: column; overflow: hidden;
+  height: 100%;
 }
 
 .chat-header {
@@ -146,19 +149,69 @@ body {
 .assistant-message .main-assistant-text p { margin-bottom: .5rem; }
 .assistant-message .main-assistant-text p:last-child { margin-bottom: 0; }
 
-/* Citas */
-.citations-container { margin-top: .8rem; border-top: 1px dashed #ced4da; padding-top: .8rem; }
+/* Fuentes documentales (grounding) */
+.citations-container {
+  margin-top: .9rem; border-top: 1px dashed #ced4da; padding-top: .75rem;
+}
+.citations-label {
+  font-size: .72rem; font-weight: 600; color: #888; text-transform: uppercase;
+  letter-spacing: .04em; margin-bottom: .5rem;
+}
 .citation-item {
   font-size: .8rem; color: var(--texto-gris-medio);
-  background-color: #fdfdfd; padding: .6rem .8rem;
-  border: 1px solid #e9ecef; border-radius: 5px; margin-bottom: .5rem; line-height: 1.4;
+  background-color: #fdfdfd; padding: .55rem .8rem;
+  border: 1px solid #e9ecef; border-radius: 6px; margin-bottom: .45rem;
+  line-height: 1.45; transition: background .2s, border-color .2s;
 }
-.citation-item .citation-marker { font-weight: bold; color: var(--uclm-rojo-principal); margin-right: .3em; }
+.citation-item.citation-highlight {
+  background-color: #fff4f4; border-color: var(--uclm-rojo-principal);
+}
+.citation-item .citation-marker {
+  font-weight: 700; color: var(--uclm-rojo-principal);
+  margin-right: .35em; font-size: .85rem;
+}
+.citation-item .citation-title {
+  font-weight: 600; color: #333; margin-right: .3em;
+}
+.citation-item .citation-meta {
+  font-size: .7rem; color: #888; display: block; margin: .1em 0 .3em;
+}
 .citation-item .citation-quote {
-  font-style: italic; color: #555; display: block; margin-top: .2em;
-  max-height: 100px; overflow-y: auto; border-left: 3px solid var(--uclm-rojo-principal); padding-left: .5em;
+  font-style: italic; color: #555; display: block;
+  border-left: 3px solid var(--uclm-rojo-principal); padding-left: .5em;
+  max-height: 80px; overflow-y: auto;
 }
-.citation-item .citation-file-id { font-size: .7rem; color: #777; display: block; margin-top: .3em; }
+/* Inline citation badge inside the message text */
+sup.citation-inline {
+  display: inline-block; cursor: pointer;
+  font-size: .65rem; font-weight: 700; line-height: 1;
+  color: #fff; background-color: var(--uclm-rojo-principal);
+  border-radius: 3px; padding: 1px 4px; margin-left: 1px;
+  vertical-align: super; transition: opacity .15s;
+  user-select: none;
+}
+sup.citation-inline:hover { opacity: .75; }
+
+/* RAG chunk tooltip */
+#rag-tooltip {
+  position: fixed; z-index: 9999; pointer-events: none;
+  max-width: 360px; min-width: 180px;
+  background: #1c1c2e; color: #e8e8f0;
+  border-radius: 8px; padding: 10px 14px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.45);
+  border-left: 3px solid var(--uclm-rojo-principal);
+  font-size: .78rem; line-height: 1.55;
+  word-break: break-word;
+}
+#rag-tooltip .tt-title {
+  font-weight: 700; font-size: .8rem; color: #fff;
+  margin-bottom: .45em; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis;
+}
+#rag-tooltip .tt-excerpt {
+  font-style: italic; color: #b8b8d0;
+  max-height: 160px; overflow-y: auto;
+}
 
 /* -------------------------------------------------------------------------- */
 /* TARJETAS DE MODO (ya existentes)                                           */
@@ -216,8 +269,9 @@ body {
 #file-preview-area {
   font-size: .8rem; color: var(--texto-oscuro-principal);
   margin-bottom: .6rem; padding: .5rem .7rem; background-color: #e9ecef;
-  border-radius: 6px; display: flex; justify-content: space-between; align-items: center;
+  border-radius: 6px; display: none; justify-content: space-between; align-items: center;
 }
+#file-preview-area.has-file { display: flex; }
 #file-preview-area button.remove-file-button { background: none; border: none; color: var(--uclm-rojo-principal); cursor: pointer; padding: .1rem; display: flex; }
 #file-preview-area button.remove-file-button:hover { color: var(--uclm-rojo-hover); }
 
@@ -243,7 +297,71 @@ body {
 #attach-file-button:hover:not(:disabled), #send-button:hover:not(:disabled) { background-color: var(--uclm-rojo-hover); }
 #send-button:disabled, #attach-file-button:disabled { background-color: var(--uclm-rojo-disabled); cursor: not-allowed; opacity: .9; }
 
-.typing-indicator { font-style: italic; color: var(--texto-gris-sutil); padding: .8rem 1.1rem; background-color: var(--mensaje-asistente-fondo); border-radius: 10px; align-self: flex-start; }
+/* Animated typing indicator — 3 pulsing dots */
+.typing-indicator { background-color: var(--mensaje-asistente-fondo); border-radius: 10px; align-self: flex-start; }
+.typing-dots { display: flex; gap: 5px; align-items: center; padding: .8rem 1.1rem; }
+.typing-dots span {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--texto-gris-sutil);
+  animation: typing-bounce .9s infinite ease-in-out;
+}
+.typing-dots span:nth-child(2) { animation-delay: .15s; }
+.typing-dots span:nth-child(3) { animation-delay: .3s; }
+@keyframes typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: .4; }
+  30% { transform: translateY(-5px); opacity: 1; }
+}
+
+/* Citations collapsible */
+.citations-toggle {
+  display: flex; align-items: center; justify-content: space-between;
+  cursor: pointer; user-select: none; width: 100%;
+}
+.citations-toggle__arrow {
+  font-size: .7rem; color: #aaa; transition: transform .2s; margin-left: .4em;
+}
+.citations-container.collapsed .citations-toggle__arrow { transform: rotate(-90deg); }
+.citations-list { margin-top: .5rem; }
+.citations-container.collapsed .citations-list { display: none; }
+
+/* Mensaje de tiempo en burbujas */
+.message-time {
+  display: block;
+  font-size: .68rem;
+  color: var(--texto-gris-sutil);
+  margin-top: .3rem;
+  opacity: .7;
+  text-align: right;
+}
+.assistant-message .message-time { text-align: left; }
+
+/* Scroll-to-bottom button */
+.chat-wrapper { position: relative; }
+#scroll-to-bottom-btn {
+  position: absolute; bottom: 72px; right: 14px;
+  width: 34px; height: 34px;
+  background: #fff; border: 1px solid var(--borde-general);
+  border-radius: 50%; display: none; align-items: center; justify-content: center;
+  cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.15);
+  color: var(--uclm-rojo-principal); z-index: 10; font-size: 1rem;
+  transition: box-shadow .2s;
+}
+#scroll-to-bottom-btn.visible { display: flex; }
+#scroll-to-bottom-btn:hover { box-shadow: 0 4px 12px rgba(0,0,0,.22); }
+
+/* File upload preview — active state */
+#file-preview-area.has-file {
+  background: rgba(140, 27, 58, .05); border: 1px solid rgba(140, 27, 58, .2);
+}
+.upload-pdf-btn {
+  padding: .25rem .7rem; font-size: .78rem; font-weight: 500;
+  background-color: var(--uclm-rojo-principal); color: #fff;
+  border: none; border-radius: 5px; cursor: pointer; flex-shrink: 0;
+  transition: background-color .2s;
+}
+.upload-pdf-btn:hover { background-color: var(--uclm-rojo-hover); }
+.upload-pdf-btn:disabled { background-color: var(--uclm-rojo-disabled); cursor: not-allowed; }
+
 .hidden { display: none !important; }
 
 /* -------------------------------------------------------------------------- */
@@ -294,14 +412,33 @@ body {
   background-color: var(--uclm-rojo-hover); transform: translateY(-1px);
 }
 
-#login-view #register-button, #login-container #register-button { background-color: #5f6368; }
-#login-view #register-button:hover, #login-container #register-button:hover { background-color: #4a4f54; }
+/* Register: outlined secondary hierarchy */
+#login-view #register-button, #login-container #register-button {
+  background-color: transparent; color: var(--uclm-rojo-principal);
+  border: 1.5px solid rgba(140, 27, 58, .35);
+}
+#login-view #register-button:hover, #login-container #register-button:hover {
+  background-color: rgba(140, 27, 58, .06); border-color: var(--uclm-rojo-principal);
+  transform: none;
+}
 
+/* Error / success messages */
 #login-view .error-message, #login-container .error-message {
   display: none; color: var(--uclm-rojo-principal);
   background: rgba(140, 27, 58, .08); border: 1px solid rgba(140, 27, 58, .15);
   border-radius: 8px; padding: .65rem .9rem; font-size: .9rem; text-align: center;
 }
+#login-view .error-message.is-success, #login-container .error-message.is-success {
+  color: #0a7a0a; background: rgba(46, 160, 67, .08); border-color: rgba(46, 160, 67, .25);
+}
+
+/* "Olvidé mi contraseña" link in login form */
+.forgot-password-link {
+  font-size: .85rem; color: var(--texto-gris-sutil); text-decoration: none;
+  cursor: pointer; background: none; border: none; padding: 0; align-self: center;
+  transition: color .15s;
+}
+.forgot-password-link:hover { color: var(--uclm-rojo-principal); text-decoration: underline; }
 
 #login-view .helper-text, #login-container .helper-text {
   font-size: .9rem; color: var(--texto-gris-sutil); margin-top: -.4rem;
@@ -523,6 +660,10 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+}
+.auditor-progress__item-step--done {
+  background: #2ecc71;
 }
 .auditor-progress__item-texts {
   display: flex;

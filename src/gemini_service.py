@@ -4,9 +4,24 @@ from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
 from src.config import logger
 from src.assistant_instructions import AUDITOR_SYSTEM_PROMPT, EXPERT_SYSTEM_PROMPT
-from src.rag_service import generate_embedding, search_documents
+from src.rag_service import (
+    generate_embedding,
+    search_documents,
+    detect_category_filter,
+    classify_question,
+    get_routing_strategy,
+    get_graph_context,
+)
+from src.context_orchestrator import search_hybrid
 
 _GEMINI_MODEL = "gemini-2.5-flash"
+
+# Context window budget per model (chars, with 0.90 safety factor applied)
+_CONTEXT_BUDGET: dict[str, int] = {
+    "gemini-2.5-flash":      180_000,
+    "gemini-2.5-flash-lite": 180_000,
+    "gemini-2.5-pro":        540_000,
+}
 
 # ---------------------------------------------------------------------------
 # Tool declarations for the auditor
@@ -36,9 +51,14 @@ AUDITOR_TOOLS = types.Tool(
         types.FunctionDeclaration(
             name="complete_audit_block",
             description=(
-                "Marca el bloque de auditoría activo como completado. "
-                "Llama SOLO cuando hayas recogido información suficiente sobre los "
-                "aspectos fundamentales del bloque. Tras llamarla, anuncia el siguiente bloque."
+                "Marca el bloque de auditoría activo como completado y guarda el resumen de hallazgos. "
+                "REQUISITO ESTRICTO: llama a esta función ÚNICAMENTE cuando hayas obtenido respuesta "
+                "explícita a TODAS las preguntas marcadas [M] del bloque activo. "
+                "Si queda alguna pregunta [M] sin responder, formula esa pregunta primero — NO llames a esta función. "
+                "Una respuesta monosílaba ('sí', 'no', 'ya') no cubre una pregunta [M] que requiera detalle "
+                "(excepción: cuando la respuesta real es 'no tenemos eso' o 'no aplica'). "
+                "Cada bloque tiene entre 4 y 9 preguntas [M]; si llevas menos de 4 intercambios "
+                "en el bloque activo es casi seguro que aún no está cubierto."
             ),
             parameters=types.Schema(
                 type=types.Type.OBJECT,
@@ -50,8 +70,9 @@ AUDITOR_TOOLS = types.Tool(
                     "summary": types.Schema(
                         type=types.Type.STRING,
                         description=(
-                            "Resumen de 2-4 frases con los hallazgos principales del bloque: "
-                            "qué información se ha recogido, qué fortalezas y qué brechas se han detectado."
+                            "Resumen de 3-5 frases con los hallazgos principales del bloque: "
+                            "qué información se ha recogido, qué fortalezas y qué brechas se han detectado, "
+                            "y clasificación de brechas (Crítico / Alto / Medio) si las hay."
                         ),
                     ),
                 },
@@ -135,12 +156,18 @@ def chat_with_expert(
     pinecone_index,
     history: list[dict],
     user_message: str,
-) -> str:
+    thread_id: str | None = None,
+    local_store=None,
+) -> tuple[str, list[dict]]:
     """
-    Runs one advisor turn with optional RAG augmentation from Pinecone.
-    embed_model is a SentenceTransformer instance used to embed the query.
+    Runs one advisor turn with RAG augmentation.
+    If thread_id and local_store are provided and the session has indexed chunks,
+    runs hybrid search (Pinecone + FAISS in parallel). Otherwise Pinecone-only.
+    Returns (response_text, sources).
     """
-    augmented_message = _build_rag_message(embed_model, pinecone_index, user_message)
+    augmented_message, sources = _build_rag_message(
+        embed_model, pinecone_index, user_message, thread_id=thread_id, local_store=local_store
+    )
 
     contents: list = list(history) + [
         types.Content(role="user", parts=[types.Part(text=augmented_message)])
@@ -153,7 +180,7 @@ def chat_with_expert(
         contents=contents,
         config=config,
     )
-    return _extract_text(response)
+    return _extract_text(response), sources
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +198,8 @@ def _dispatch_tool(
         query = args.get("query", "")
         logger.info("Tool invoke_sustainability_expert: thread=%s query=%r", thread_id, query[:80])
         try:
-            return chat_with_expert(genai_client, embed_model, pinecone_index, [], query)
+            text, _ = chat_with_expert(genai_client, embed_model, pinecone_index, [], query)
+            return text
         except Exception:
             logger.error("invoke_sustainability_expert failed", exc_info=True)
             return "El experto no pudo procesar la consulta en este momento."
@@ -213,81 +241,132 @@ def _update_audit_progress(
         return f"Bloque {block_id} procesado (no se pudo persistir el estado)."
 
 
-_CSDDD_TERMS = {
-    "csddd", "diligencia debida", "cadena de actividades", "impactos adversos",
-    "impacto adverso", "reparación", "reclamacion", "reclamación", "socio comercial",
-    "due diligence", "conducta empresarial responsable",
-}
-_GRI_TERMS = {
-    "gri", "global reporting initiative", "estándar gri", "estandar gri",
-    "contenido gri", "indicador gri",
-}
-
-
-def _detect_category_filter(query: str) -> dict | None:
+def _build_rag_message(
+    embed_model,
+    pinecone_index,
+    user_message: str,
+    thread_id: str | None = None,
+    local_store=None,
+    model_name: str = _GEMINI_MODEL,
+) -> tuple[str, list[dict]]:
     """
-    Returns a Pinecone metadata filter based on keyword signals in the query.
-    Corpus categories: 'CSDDD', 'GRI', 'general' (CSRD/NEIS/OCDE/marco teórico).
+    Retrieves relevant chunks and builds the augmented message for the LLM.
 
-    Strategy:
-    - Clear CSDDD query → ['CSDDD', 'general']  (exclude GRI-only chunks)
-    - Clear GRI query   → ['GRI', 'general']    (exclude CSDDD-only chunks)
-    - Mixed / CSRD / unknown → None (search all categories)
+    When local_store has chunks for thread_id, runs hybrid search (Pinecone + FAISS
+    concurrently via context_orchestrator). Otherwise falls back to Pinecone-only.
+    For operational/resource questions, also queries Neo4j for relationship triples.
+    Results from the uploaded document appear first; Pinecone docs follow.
+    augmented_message prepends numbered excerpts so the model can cite [1]…[N].
     """
-    q = query.lower()
-    hits_csddd = sum(1 for t in _CSDDD_TERMS if t in q)
-    hits_gri = sum(1 for t in _GRI_TERMS if t in q)
+    char_budget = _CONTEXT_BUDGET.get(model_name, 180_000)
+    question_type = classify_question(user_message)
+    strategy = get_routing_strategy(question_type)
+    logger.info(
+        "RAG routing: question_type=%s strategy=%s model=%s budget=%d",
+        question_type, strategy, model_name, char_budget,
+    )
 
-    if hits_gri >= 1 and hits_csddd == 0:
-        return {"primary_category": {"$in": ["GRI", "general"]}}
-    if hits_csddd >= 2 and hits_gri == 0:
-        return {"primary_category": {"$in": ["CSDDD", "general"]}}
-    return None  # search all — CSRD/NEIS/OCDE live in 'general'
+    use_hybrid_faiss = (
+        local_store is not None
+        and thread_id is not None
+        and local_store.chunk_count(thread_id) > 0
+    )
 
-
-def _build_rag_message(embed_model, pinecone_index, user_message: str) -> str:
-    """
-    Embeds user_message with SentenceTransformer, applies category filtering,
-    retrieves candidates (top_k=12), drops chunks below score 0.55,
-    and prepends up to 6 relevant excerpts to the message.
-    """
-    if pinecone_index is None:
-        return user_message
     try:
-        embedding = generate_embedding(embed_model, user_message)
-        cat_filter = _detect_category_filter(user_message)
-        docs = search_documents(pinecone_index, embedding, metadata_filter=cat_filter)
-        if cat_filter and not docs:
-            # Fallback: retry without filter if category narrowing returned nothing
-            logger.info("RAG: category filter returned 0 results, retrying without filter")
-            docs = search_documents(pinecone_index, embedding, metadata_filter=None)
+        if use_hybrid_faiss:
+            pine_docs, local_docs = search_hybrid(
+                thread_id, user_message, embed_model, pinecone_index, local_store
+            )
+            # Local (uploaded) docs first, then Pinecone — both sorted by score
+            local_docs_sorted = sorted(local_docs, key=lambda d: d.get("score", 0), reverse=True)
+            pine_docs_sorted = sorted(pine_docs, key=lambda d: d.get("score", 0), reverse=True)
+            docs = local_docs_sorted + pine_docs_sorted
+        else:
+            if pinecone_index is None:
+                return user_message, []
+            embedding = generate_embedding(embed_model, user_message)
+            cat_filter = detect_category_filter(user_message)
+            docs = search_documents(pinecone_index, embedding, metadata_filter=cat_filter)
+            if cat_filter and not docs:
+                logger.info("RAG: category filter returned 0 results, retrying without filter")
+                docs = search_documents(pinecone_index, embedding, metadata_filter=None)
     except Exception:
         logger.error("RAG retrieval failed", exc_info=True)
-        return user_message
-
-    if not docs:
-        return user_message
+        return user_message, []
 
     context_parts = []
+    sources = []
+    used_chars = len(user_message)
+
     for i, doc in enumerate(docs, 1):
         title = doc.get("title") or "Documento"
         category = doc.get("category", "")
         score = doc.get("score", 0.0)
-        header = f"[{i}] {title}" + (f" ({category}, score={score:.2f})" if category else "")
+        page = doc.get("page")
+        total_pages = doc.get("total_pages")
         content = doc.get("content", "").strip()
-        if content:
-            context_parts.append(f"{header}\n{content}")
 
-    if not context_parts:
-        return user_message
+        meta_parts = [category] if category else []
+        if page is not None:
+            meta_parts.append(f"p.{page}/{total_pages}" if total_pages else f"p.{page}")
+        meta_parts.append(f"relevancia={score:.2f}")
+        header = f"[{i}] {title} ({', '.join(meta_parts)})"
 
-    context_block = "\n\n".join(context_parts)
-    return (
-        f"Contexto de la base documental de sostenibilidad:\n\n"
-        f"{context_block}\n\n"
-        f"---\n\n"
-        f"Pregunta del usuario: {user_message}"
+        chunk = f"{header}\n{content}"
+        if content and used_chars + len(chunk) <= char_budget:
+            context_parts.append(chunk)
+            used_chars += len(chunk)
+
+        sources.append({
+            "index": i,
+            "title": title,
+            "category": category,
+            "score": round(score, 3),
+            "excerpt": content[:220] + ("…" if len(content) > 220 else ""),
+            "page": page,
+            "total_pages": total_pages,
+        })
+
+    # Graph context for operational/resource questions (Neo4j)
+    graph_section = ""
+    if strategy == "hybrid":
+        graph_budget = max(0, char_budget - used_chars - 500)
+        if graph_budget > 0:
+            graph_ctx = get_graph_context(user_message, char_budget=graph_budget)
+            if graph_ctx:
+                graph_section = f"\n\n{graph_ctx}"
+                used_chars += len(graph_ctx)
+
+    if not context_parts and not graph_section:
+        return user_message, []
+
+    semantic_block = "\n\n".join(context_parts)
+
+    if semantic_block and graph_section:
+        augmented = (
+            f"## CONTEXTO SEMÁNTICO\n"
+            f"Fragmentos relevantes de la base documental "
+            f"(cítalos inline como [1], [2]… cuando los uses en tu respuesta):\n\n"
+            f"{semantic_block}"
+            f"\n\n## RELACIONES DE GRAFO{graph_section}"
+            f"\n\n---\n\nPregunta: {user_message}"
+        )
+    elif semantic_block:
+        augmented = (
+            f"Fragmentos relevantes de la base documental "
+            f"(cítalos inline como [1], [2]… cuando los uses en tu respuesta):\n\n"
+            f"{semantic_block}\n\n---\n\nPregunta: {user_message}"
+        )
+    else:
+        augmented = (
+            f"{graph_section.strip()}\n\n---\n\nPregunta: {user_message}"
+        )
+
+    logger.info(
+        "RAG message built: %d semantic chunks, graph=%s, total_chars=%d",
+        len(context_parts), bool(graph_section), used_chars,
     )
+    return augmented, sources
 
 
 def _extract_text(response) -> str:
