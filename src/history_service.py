@@ -1,5 +1,5 @@
 # src/history_service.py
-from google.cloud.firestore_v1 import SERVER_TIMESTAMP
+from datetime import datetime, timedelta
 from src.config import logger
 
 
@@ -47,15 +47,16 @@ def append_messages(
             .collection("messages")
         )
         batch = firestore_db.batch()
+        now = datetime.utcnow()
         batch.create(messages_ref.document(), {
             "role": "user",
             "text": user_text,
-            "created_at": SERVER_TIMESTAMP,
+            "created_at": now,
         })
         batch.create(messages_ref.document(), {
             "role": "model",
             "text": model_text,
-            "created_at": SERVER_TIMESTAMP,
+            "created_at": now + timedelta(microseconds=1),
         })
         batch.commit()
     except Exception:

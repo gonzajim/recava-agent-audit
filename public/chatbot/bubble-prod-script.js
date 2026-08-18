@@ -181,6 +181,9 @@ document.addEventListener('DOMContentLoaded', function () {
   let auditorProgressEmptyEl = null;
   let auditProgressState = null;
   let isFetchingAuditProgress = false;
+  let auditRightPanelEl = null;
+  let userFiles = [];          // server-sourced; shared across advisor + auditor
+  let _auditDomReady = false;
 
   if (chatWrapperEl && chatMessagesEl) {
     auditorProgressPanelEl = document.createElement('section');
@@ -322,6 +325,7 @@ document.addEventListener('DOMContentLoaded', function () {
       document.querySelector('.chat-wrapper').style.display = 'flex';
       chatMessagesEl.style.display = 'none';
       inputAreaWrapperEl.style.display = 'block';
+      loadUserFiles();
       await initializeSelectionLayout();
     } else {
       currentUser = null;
@@ -438,6 +442,11 @@ document.addEventListener('DOMContentLoaded', function () {
     grid.innerHTML = `
       <article class="mode-card mode-card--advisor">
         <header class="mode-card__header">Modo Asesor (Cumplimiento en sostenibilidad)</header>
+        <div class="mode-card__footer">
+          <button class="mode-button-chat" data-mode="advisor" title="Seleccionar modo asesor" role="button">
+            Seleccionar Modo Asesor
+          </button>
+        </div>
         <div class="mode-card__body">
           <p class="mode-card__text">
             En Modo Asesor, el asistente actúa como experto en diligencia debida y cumplimiento normativo en sostenibilidad,
@@ -464,15 +473,15 @@ document.addEventListener('DOMContentLoaded', function () {
             y el corpus metodológico RECAVA, por lo que resultan idóneas para consultas técnicas y operativas sin intervención humana directa.
           </p>
         </div>
-        <footer class="mode-card__footer">
-          <button class="mode-button-chat" data-mode="advisor" title="Seleccionar modo asesor" role="button">
-            Seleccionar Modo Asesor
-          </button>
-        </footer>
       </article>
 
       <article class="mode-card mode-card--auditor">
         <header class="mode-card__header">Modo Auditor (Cumplimiento en sostenibilidad)</header>
+        <div class="mode-card__footer">
+          <button class="mode-button-chat" data-mode="auditor" title="Seleccionar modo auditor" role="button">
+            Seleccionar Modo Auditor
+          </button>
+        </div>
         <div class="mode-card__body">
           <p class="mode-card__text">
             En Modo Auditor, el asistente actúa como auditor digital de cumplimiento: revisa políticas, procedimientos y evidencias,
@@ -515,11 +524,6 @@ document.addEventListener('DOMContentLoaded', function () {
             </ul>
           </div>
         </div>
-        <footer class="mode-card__footer">
-          <button class="mode-button-chat" data-mode="auditor" title="Seleccionar modo auditor" role="button">
-            Seleccionar Modo Auditor
-          </button>
-        </footer>
       </article>`;
     selectionContainer.appendChild(grid);
 
@@ -808,6 +812,7 @@ document.addEventListener('DOMContentLoaded', function () {
   function showAuditorProgressPanel() {
     if (!auditorProgressPanelEl) return;
     auditorProgressPanelEl.classList.remove('hidden');
+    _setupAuditLayout();
     renderAuditProgressPanel();
     if (currentChatThreadId) {
       refreshAuditProgress(currentChatThreadId);
@@ -817,6 +822,89 @@ document.addEventListener('DOMContentLoaded', function () {
   function hideAuditorProgressPanel() {
     if (!auditorProgressPanelEl) return;
     auditorProgressPanelEl.classList.add('hidden');
+    _teardownAuditLayout();
+  }
+
+  function _setupAuditLayout() {
+    if (!chatWrapperEl) return;
+    chatWrapperEl.classList.add('audit-mode');
+
+    if (_auditDomReady) return;
+    _auditDomReady = true;
+
+    // Restructure left panel: prepend new header + mini progress bar, wrap rest in body
+    const hdr = document.createElement('div');
+    hdr.className = 'audit-panel-hdr';
+    hdr.innerHTML = `<span class="audit-panel-hdr__title">Proceso de auditoría</span><button class="audit-panel-hdr__toggle" title="Colapsar panel">‹</button>`;
+    auditorProgressPanelEl.prepend(hdr);
+    hdr.querySelector('.audit-panel-hdr__toggle').addEventListener('click', () => {
+      chatWrapperEl.classList.toggle('audit-left-collapsed');
+    });
+
+    const miniBar = document.createElement('div');
+    miniBar.className = 'audit-progress-mini-bar';
+    miniBar.innerHTML = `
+      <div class="audit-progress-mini-meta">
+        <span>Completado</span>
+        <span class="audit-progress-mini-pct">0%</span>
+      </div>
+      <div class="auditor-progress__bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="auditor-progress__bar-fill" style="width:0%"></div>
+      </div>`;
+    hdr.insertAdjacentElement('afterend', miniBar);
+
+    // Redirect refs to new elements
+    auditorProgressTitleEl = hdr.querySelector('.audit-panel-hdr__title');
+    auditorProgressPercentEl = miniBar.querySelector('.audit-progress-mini-pct');
+    auditorProgressBarFillEl = miniBar.querySelector('.auditor-progress__bar-fill');
+
+    // Wrap remaining children in scrollable body; hide old header + bar (replaced by mini-bar)
+    const body = document.createElement('div');
+    body.className = 'audit-panel-body';
+    const toMove = [...auditorProgressPanelEl.children].slice(2);
+    toMove.forEach(child => body.appendChild(child));
+    auditorProgressPanelEl.appendChild(body);
+    const oldHdr = body.querySelector('.auditor-progress__header');
+    const oldBar = body.querySelector('.auditor-progress__bar');
+    if (oldHdr) oldHdr.style.display = 'none';
+    if (oldBar) oldBar.style.display = 'none';
+
+    // Create right panel
+    auditRightPanelEl = document.createElement('aside');
+    auditRightPanelEl.className = 'audit-panel--right';
+    auditRightPanelEl.innerHTML = `
+      <div class="audit-panel-hdr">
+        <button class="audit-panel-hdr__toggle" title="Colapsar panel">›</button>
+        <span class="audit-panel-hdr__title">Informe y archivos</span>
+      </div>
+      <div class="audit-right-tabs">
+        <button class="audit-right-tab is-active" data-tab="report">Informe</button>
+        <button class="audit-right-tab" data-tab="files">Archivos</button>
+      </div>
+      <div class="audit-tab-pane is-active" data-pane="report">
+        <p class="audit-panel-empty">Los hallazgos aparecerán aquí conforme se completen los bloques.</p>
+      </div>
+      <div class="audit-tab-pane" data-pane="files">
+        <p class="audit-panel-empty">Los archivos adjuntos aparecerán aquí.</p>
+      </div>`;
+    chatWrapperEl.appendChild(auditRightPanelEl);
+
+    auditRightPanelEl.querySelector('.audit-panel-hdr__toggle').addEventListener('click', () => {
+      chatWrapperEl.classList.toggle('audit-right-collapsed');
+    });
+    auditRightPanelEl.querySelectorAll('.audit-right-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        auditRightPanelEl.querySelectorAll('.audit-right-tab').forEach(t => t.classList.remove('is-active'));
+        auditRightPanelEl.querySelectorAll('.audit-tab-pane').forEach(p => p.classList.remove('is-active'));
+        tab.classList.add('is-active');
+        auditRightPanelEl.querySelector(`[data-pane="${tab.dataset.tab}"]`).classList.add('is-active');
+      });
+    });
+  }
+
+  function _teardownAuditLayout() {
+    if (!chatWrapperEl) return;
+    chatWrapperEl.classList.remove('audit-mode', 'audit-left-collapsed', 'audit-right-collapsed');
   }
 
   function buildDefaultAuditProgressState() {
@@ -911,6 +999,99 @@ document.addEventListener('DOMContentLoaded', function () {
 
     renderAuditProgressList(state);
     renderAuditProgressSummary(state);
+    _renderAuditRightPanel();
+  }
+
+  async function loadUserFiles() {
+    if (!currentUser) return;
+    try {
+      const token = await currentUser.getIdToken();
+      const baseUrl = getOrchestratorBaseUrl();
+      const resp = await fetch(`${baseUrl}/user_files`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      userFiles = data.files || [];
+      renderFileList();
+    } catch (_) { /* silent */ }
+  }
+
+  async function deleteUserFile(docId) {
+    if (!currentUser) return;
+    try {
+      const token = await currentUser.getIdToken();
+      const baseUrl = getOrchestratorBaseUrl();
+      const resp = await fetch(`${baseUrl}/user_files/${encodeURIComponent(docId)}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!resp.ok) { addSystemMessageToChat('No se pudo eliminar el documento.'); return; }
+      const data = await resp.json();
+      userFiles = data.files || [];
+      renderFileList();
+    } catch (_) { addSystemMessageToChat('Error al eliminar el documento.'); }
+  }
+
+  function _fileItemHtml(f) {
+    const date = f.uploaded_at ? new Date(f.uploaded_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: '2-digit' }) : '';
+    return `<div class="audit-file-item" data-doc-id="${escapeHtml(f.doc_id)}">
+      <span class="audit-file-item__icon">📄</span>
+      <div class="audit-file-item__info">
+        <div class="audit-file-item__name" title="${escapeHtml(f.filename)}">${escapeHtml(f.filename)}</div>
+        <div class="audit-file-item__block">${f.chunk_count} fragmentos · ${date}</div>
+      </div>
+      <button class="audit-file-item__del" title="Eliminar" data-doc-id="${escapeHtml(f.doc_id)}">✕</button>
+    </div>`;
+  }
+
+  function renderFileList() {
+    // Auditor right panel
+    _renderAuditRightPanel();
+    // Advisor file list
+    const advisorList = document.getElementById('advisor-file-list');
+    if (advisorList) {
+      advisorList.innerHTML = userFiles.length
+        ? userFiles.map(_fileItemHtml).join('')
+        : '<p class="advisor-file-list__empty">Sin documentos subidos.</p>';
+      advisorList.querySelectorAll('.audit-file-item__del').forEach(btn => {
+        btn.addEventListener('click', () => deleteUserFile(btn.dataset.docId));
+      });
+    }
+  }
+
+  function _renderAuditRightPanel() {
+    if (!auditRightPanelEl) return;
+    const state = auditProgressState || buildDefaultAuditProgressState();
+
+    // Informe tab
+    const reportPane = auditRightPanelEl.querySelector('[data-pane="report"]');
+    if (reportPane) {
+      const completed = (state.blocks || []).filter(b => b.status === 'completed' && b.summary && b.summary.trim());
+      if (!completed.length) {
+        reportPane.innerHTML = '<p class="audit-panel-empty">Los hallazgos aparecerán aquí conforme se completen los bloques.</p>';
+      } else {
+        reportPane.innerHTML = completed.map(b =>
+          `<div class="audit-report-blk">
+            <p class="audit-report-blk__title">${escapeHtml(b.label || b.id)}</p>
+            <p class="audit-report-blk__text">${escapeHtml(b.summary.trim())}</p>
+          </div>`
+        ).join('');
+      }
+    }
+
+    // Archivos tab — sourced from userFiles (server)
+    const filesPane = auditRightPanelEl.querySelector('[data-pane="files"]');
+    if (filesPane) {
+      if (!userFiles.length) {
+        filesPane.innerHTML = '<p class="audit-panel-empty">Los archivos subidos aparecerán aquí.</p>';
+      } else {
+        filesPane.innerHTML = userFiles.map(_fileItemHtml).join('');
+        filesPane.querySelectorAll('.audit-file-item__del').forEach(btn => {
+          btn.addEventListener('click', () => deleteUserFile(btn.dataset.docId));
+        });
+      }
+    }
   }
 
   function renderAuditProgressList(state) {
@@ -928,48 +1109,43 @@ document.addEventListener('DOMContentLoaded', function () {
 
     blocks.forEach((block, idx) => {
       const isActive = block.id === activeBlockId;
-      const statusClass = block.status === 'completed' ? 'completed' : (isActive ? 'active' : 'pending');
+      const isDone = block.status === 'completed';
+
       const li = document.createElement('li');
-      li.className = `auditor-progress__item auditor-progress__item--${statusClass}`;
+      const modClass = isDone ? 'audit-blk--done' : (isActive ? 'audit-blk--active' : '');
+      li.className = `audit-blk${modClass ? ' ' + modClass : ''}`;
       li.dataset.blockId = block.id;
 
-      const statusLabel = formatAuditBlockStatus(block.status, isActive);
-      const stepContent = block.status === 'completed' ? '✓' : String(idx + 1);
-      const stepClass = `auditor-progress__item-step${block.status === 'completed' ? ' auditor-progress__item-step--done' : ''}`;
+      const numContent = isDone ? '✓' : String(idx + 1);
+      const canComplete = canCompleteAuditBlock(block, state);
+      const completeBtnHtml = canComplete
+        ? `<button class="audit-blk__complete-btn" type="button" data-action="complete-block" data-block-id="${block.id}">Completar</button>`
+        : '';
+
+      let bodyContent;
+      if (isDone && block.summary && block.summary.trim()) {
+        bodyContent = escapeHtml(block.summary.trim());
+      } else if (isActive) {
+        bodyContent = '<span class="audit-blk__body-empty">En curso…</span>';
+      } else {
+        bodyContent = '<span class="audit-blk__body-empty">Pendiente</span>';
+      }
 
       li.innerHTML = `
-        <div class="auditor-progress__item-info">
-          <span class="${stepClass}">${stepContent}</span>
-          <div class="auditor-progress__item-texts">
-            <span class="auditor-progress__item-label">${escapeHtml(block.label || block.id)}</span>
-            <span class="auditor-progress__item-status">${escapeHtml(statusLabel)}</span>
-          </div>
+        <div class="audit-blk__hdr">
+          <span class="audit-blk__num">${numContent}</span>
+          <span class="audit-blk__label">${escapeHtml(block.label || block.id)}</span>
+          ${completeBtnHtml}
+          <span class="audit-blk__chevron">▶</span>
         </div>
-        <div class="auditor-progress__item-actions">
-          <button
-            class="auditor-progress__action"
-            type="button"
-            role="button"
-            aria-label="Ver informe del bloque"
-            data-action="view-report"
-            data-block-id="${block.id}"
-            ${canViewAuditReport(block, state) ? '' : 'disabled aria-disabled="true"'}
-          >
-            Ver informe
-          </button>
-          <button
-            class="auditor-progress__action auditor-progress__action--complete"
-            type="button"
-            role="button"
-            aria-label="Marcar bloque como completado"
-            data-action="complete-block"
-            data-block-id="${block.id}"
-            ${canCompleteAuditBlock(block, state) ? '' : 'disabled aria-disabled="true"'}
-          >
-            Marcar completado
-          </button>
-        </div>
-      `;
+        <div class="audit-blk__body">${bodyContent}</div>`;
+
+      if (isDone || isActive) li.classList.add('is-open');
+
+      li.querySelector('.audit-blk__hdr').addEventListener('click', (e) => {
+        if (e.target.closest('[data-action]')) return;
+        li.classList.toggle('is-open');
+      });
 
       auditorProgressListEl.appendChild(li);
     });
@@ -1214,8 +1390,10 @@ document.addEventListener('DOMContentLoaded', function () {
     if (currentChatMode === 'auditor') {
       setAuditProgressState(buildDefaultAuditProgressState());
       showAuditorProgressPanel();
+      advisorFilePanelEl.classList.add('hidden');
     } else {
       hideAuditorProgressPanel();
+      if (userFiles.length) advisorFilePanelEl.classList.remove('hidden');
     }
     setHistoryStatusMessage('', false);
 
@@ -1512,6 +1690,38 @@ document.addEventListener('DOMContentLoaded', function () {
   fileInputEl.style.display = 'none';
   document.body.appendChild(fileInputEl);
 
+  // Advisor file list — persistent docs panel above input (advisor mode only)
+  const advisorFilePanelEl = document.createElement('div');
+  advisorFilePanelEl.id = 'advisor-file-panel';
+  advisorFilePanelEl.className = 'advisor-file-panel hidden';
+  advisorFilePanelEl.innerHTML =
+    `<div class="advisor-file-panel__hdr">
+       <span>Mis documentos</span>
+       <button class="advisor-file-panel__toggle" title="Cerrar">✕</button>
+     </div>
+     <div id="advisor-file-list" class="advisor-file-list"></div>`;
+  inputAreaWrapperEl?.insertAdjacentElement('beforebegin', advisorFilePanelEl);
+  advisorFilePanelEl.querySelector('.advisor-file-panel__toggle')
+    ?.addEventListener('click', () => advisorFilePanelEl.classList.add('hidden'));
+
+  // Active-doc badge — shows which PDF is loaded in this session
+  const activeDocBadgeContainer = document.createElement('div');
+  activeDocBadgeContainer.id = 'active-doc-badge';
+  activeDocBadgeContainer.className = 'active-doc-badge hidden';
+  inputAreaWrapperEl?.insertAdjacentElement('beforebegin', activeDocBadgeContainer);
+
+  function showActiveDocBadge(fileName) {
+    activeDocBadgeContainer.innerHTML =
+      `<span class="active-doc-badge__icon">📄</span>` +
+      `<span class="active-doc-badge__name">${escapeHtml(fileName)}</span>` +
+      `<span class="active-doc-badge__hint">activo en esta sesión</span>`;
+    activeDocBadgeContainer.classList.remove('hidden');
+  }
+  function clearActiveDocBadge() {
+    activeDocBadgeContainer.classList.add('hidden');
+    activeDocBadgeContainer.innerHTML = '';
+  }
+
   // File preview row (already in HTML as #file-preview-area)
   const filePreviewEl = document.getElementById('file-preview-area');
   let filePreviewNameEl = null;
@@ -1601,6 +1811,14 @@ document.addEventListener('DOMContentLoaded', function () {
           `Ahora puedes hacer preguntas sobre el documento.`;
       }
 
+      showActiveDocBadge(fileName);
+
+      // Refresh server-sourced file list (response includes updated files array)
+      if (data.files) {
+        userFiles = data.files;
+        renderFileList();
+      }
+
       clearFilePreview();
 
       // Enable chat if first interaction
@@ -1633,6 +1851,8 @@ document.addEventListener('DOMContentLoaded', function () {
     currentChatThreadId = null;
     currentConversationMessages = [];
     hideAuditorProgressPanel();
+    clearActiveDocBadge();
+    advisorFilePanelEl.classList.add('hidden');
     chatMessagesEl.innerHTML = '';
     chatMessagesEl.style.display = 'none';
     inputAreaWrapperEl.style.display = 'none';

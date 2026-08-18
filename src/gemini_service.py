@@ -7,6 +7,7 @@ from src.assistant_instructions import AUDITOR_SYSTEM_PROMPT, EXPERT_SYSTEM_PROM
 from src.rag_service import (
     generate_embedding,
     search_documents,
+    search_user_documents,
     detect_category_filter,
     classify_question,
     get_routing_strategy,
@@ -101,6 +102,8 @@ def chat_with_auditor(
     user_message: str,
     thread_id: str,
     audit_context: str,
+    local_store=None,
+    uid: str | None = None,
 ) -> str:
     """
     Runs one auditor turn with tool-call looping.
@@ -133,7 +136,8 @@ def chat_with_auditor(
         function_responses = []
         for fc in response.function_calls:
             result = _dispatch_tool(
-                fc, genai_client, embed_model, firestore_db, pinecone_index, thread_id
+                fc, genai_client, embed_model, firestore_db, pinecone_index, thread_id,
+                local_store=local_store, uid=uid,
             )
             function_responses.append(
                 types.Part(
@@ -158,15 +162,16 @@ def chat_with_expert(
     user_message: str,
     thread_id: str | None = None,
     local_store=None,
+    uid: str | None = None,
 ) -> tuple[str, list[dict]]:
     """
     Runs one advisor turn with RAG augmentation.
-    If thread_id and local_store are provided and the session has indexed chunks,
-    runs hybrid search (Pinecone + FAISS in parallel). Otherwise Pinecone-only.
+    Searches user's Pinecone namespace first (if uid provided), then global corpus.
     Returns (response_text, sources).
     """
     augmented_message, sources = _build_rag_message(
-        embed_model, pinecone_index, user_message, thread_id=thread_id, local_store=local_store
+        embed_model, pinecone_index, user_message,
+        thread_id=thread_id, local_store=local_store, uid=uid,
     )
 
     contents: list = list(history) + [
@@ -189,7 +194,8 @@ def chat_with_expert(
 
 
 def _dispatch_tool(
-    fc, genai_client, embed_model, firestore_db, pinecone_index, thread_id: str
+    fc, genai_client, embed_model, firestore_db, pinecone_index, thread_id: str,
+    local_store=None, uid: str | None = None,
 ) -> str:
     name = fc.name
     args = dict(fc.args) if fc.args else {}
@@ -198,7 +204,10 @@ def _dispatch_tool(
         query = args.get("query", "")
         logger.info("Tool invoke_sustainability_expert: thread=%s query=%r", thread_id, query[:80])
         try:
-            text, _ = chat_with_expert(genai_client, embed_model, pinecone_index, [], query)
+            text, _ = chat_with_expert(
+                genai_client, embed_model, pinecone_index, [], query,
+                thread_id=thread_id, local_store=local_store, uid=uid,
+            )
             return text
         except Exception:
             logger.error("invoke_sustainability_expert failed", exc_info=True)
@@ -248,14 +257,16 @@ def _build_rag_message(
     thread_id: str | None = None,
     local_store=None,
     model_name: str = _GEMINI_MODEL,
+    uid: str | None = None,
 ) -> tuple[str, list[dict]]:
     """
     Retrieves relevant chunks and builds the augmented message for the LLM.
 
-    When local_store has chunks for thread_id, runs hybrid search (Pinecone + FAISS
-    concurrently via context_orchestrator). Otherwise falls back to Pinecone-only.
-    For operational/resource questions, also queries Neo4j for relationship triples.
-    Results from the uploaded document appear first; Pinecone docs follow.
+    Search order:
+      1. User's Pinecone namespace (uid) — permanent uploaded files
+      2. FAISS (local_store) — ephemeral session uploads (legacy, kept for running instances)
+      3. Global Pinecone corpus (CSRD/CSDDD/NEIS/OCDE)
+    Results from uploaded documents appear first; corpus follows.
     augmented_message prepends numbered excerpts so the model can cite [1]…[N].
     """
     char_budget = _CONTEXT_BUDGET.get(model_name, 180_000)
@@ -273,23 +284,38 @@ def _build_rag_message(
     )
 
     try:
+        # Always compute the embedding once — reused for both user-namespace and corpus search
+        embedding = generate_embedding(embed_model, user_message)
+
+        # 1. User's permanent files in their Pinecone namespace
+        user_docs: list[dict] = []
+        if uid and pinecone_index is not None:
+            user_docs = search_user_documents(pinecone_index, embedding, uid)
+            user_docs = sorted(user_docs, key=lambda d: d.get("score", 0), reverse=True)
+
+        # 2. Legacy FAISS (ephemeral; will be empty for new uploads)
+        local_docs: list[dict] = []
         if use_hybrid_faiss:
-            pine_docs, local_docs = search_hybrid(
+            _, local_docs = search_hybrid(
                 thread_id, user_message, embed_model, pinecone_index, local_store
             )
-            # Local (uploaded) docs first, then Pinecone — both sorted by score
-            local_docs_sorted = sorted(local_docs, key=lambda d: d.get("score", 0), reverse=True)
-            pine_docs_sorted = sorted(pine_docs, key=lambda d: d.get("score", 0), reverse=True)
-            docs = local_docs_sorted + pine_docs_sorted
+            local_docs = sorted(local_docs, key=lambda d: d.get("score", 0), reverse=True)
+
+        # 3. Global corpus
+        if pinecone_index is None:
+            pine_docs: list[dict] = []
         else:
-            if pinecone_index is None:
-                return user_message, []
-            embedding = generate_embedding(embed_model, user_message)
             cat_filter = detect_category_filter(user_message)
-            docs = search_documents(pinecone_index, embedding, metadata_filter=cat_filter)
-            if cat_filter and not docs:
+            pine_docs = search_documents(pinecone_index, embedding, metadata_filter=cat_filter)
+            if cat_filter and not pine_docs:
                 logger.info("RAG: category filter returned 0 results, retrying without filter")
-                docs = search_documents(pinecone_index, embedding, metadata_filter=None)
+                pine_docs = search_documents(pinecone_index, embedding, metadata_filter=None)
+
+        docs = user_docs + local_docs + pine_docs
+
+        if not docs and pinecone_index is None:
+            return user_message, []
+
     except Exception:
         logger.error("RAG retrieval failed", exc_info=True)
         return user_message, []

@@ -13,7 +13,7 @@ from src.config import app, logger, genai_client, pinecone_index, embed_model, l
 from src.persistence_service import persist_conversation_turn
 from src.history_service import get_thread_history, append_messages
 from src.gemini_service import chat_with_auditor, chat_with_expert
-from src.rag_service import ingest_document, extract_pdf_chunks
+from src.rag_service import ingest_document, extract_pdf_chunks, upsert_user_file_chunks, delete_user_file_chunks
 from src.bigquery_service import (
     fetch_recent_conversations_for_user,
     fetch_conversation_thread,
@@ -339,6 +339,8 @@ def chat_with_main_audit_orchestrator():
             user_message,
             thread_id,
             audit_context,
+            local_store=local_store,
+            uid=uid,
         )
 
         append_messages(firestore_db, thread_id, user_message, response_text)
@@ -412,6 +414,7 @@ def chat_with_sustainability_expert():
             user_message,
             thread_id=thread_id,
             local_store=local_store,
+            uid=uid,
         )
 
         append_messages(firestore_db, thread_id, user_message, response_text)
@@ -450,13 +453,37 @@ def chat_with_sustainability_expert():
         return fail("Internal server error", status=500, details=str(e))
 
 
+def _user_files_ref(uid: str):
+    return firestore_db.collection("user_documents").document(uid).collection("files")
+
+
+def _get_user_files(uid: str) -> list[dict]:
+    docs = _user_files_ref(uid).order_by("uploaded_at").stream()
+    files = []
+    for doc in docs:
+        d = doc.to_dict()
+        uploaded_at = d.get("uploaded_at")
+        files.append({
+            "doc_id": d["doc_id"],
+            "filename": d["filename"],
+            "chunk_count": d["chunk_count"],
+            "size_bytes": d.get("size_bytes", 0),
+            "uploaded_at": uploaded_at.isoformat() if hasattr(uploaded_at, "isoformat") else str(uploaded_at or ""),
+        })
+    return files
+
+
+_MAX_USER_FILES = 25
+
+
 @limiter.limit("10/minute")
 @app.route("/upload_document", methods=["POST"])
 def upload_document():
     """
-    Accepts a PDF upload, extracts + chunks its text, embeds every chunk,
-    and stores the vectors in the in-memory FAISS index keyed by thread_id.
-    Requires Firebase auth. Returns {thread_id, chunks_indexed, filename}.
+    Accepts a PDF upload, chunks + embeds its text, stores vectors permanently
+    in the user's Pinecone namespace, and records metadata in Firestore.
+    Enforces a 25-file limit per user.
+    Returns {doc_id, filename, chunks_indexed, files: [...]}.
     """
     decoded_user = require_firebase_user_or_403()
     uid = decoded_user["uid"]
@@ -470,37 +497,95 @@ def upload_document():
         return fail("Solo se admiten archivos PDF.", 415)
 
     file_bytes = uploaded_file.read()
-    if len(file_bytes) > 20 * 1024 * 1024:
-        return fail("El archivo supera el límite de 20 MB.", 413)
     if not file_bytes:
         return fail("El archivo está vacío.", 400)
+    if len(file_bytes) > 20 * 1024 * 1024:
+        return fail("El archivo supera el límite de 20 MB.", 413)
 
-    thread_id = (request.form.get("thread_id") or "").strip() or str(uuid.uuid4())
-    ensure_thread_ownership(thread_id, uid)
+    if pinecone_index is None:
+        return fail("El servicio de almacenamiento de documentos no está disponible.", 503)
+
+    # Enforce 25-file limit
+    existing_files = _get_user_files(uid)
+    if len(existing_files) >= _MAX_USER_FILES:
+        return fail(
+            f"Has alcanzado el límite de {_MAX_USER_FILES} documentos. "
+            "Elimina alguno antes de subir uno nuevo.", 429
+        )
 
     try:
         chunks = extract_pdf_chunks(file_bytes)
         if not chunks:
             return fail("No se pudo extraer texto del PDF.", 422)
 
-        embeddings = [
-            embed_model.encode(c, normalize_embeddings=True).tolist() for c in chunks
-        ]
-        total = local_store.add_chunks(thread_id, chunks, embeddings)
+        doc_id = str(uuid.uuid4())
+        filename = uploaded_file.filename
 
-        logger.info(
-            "/upload_document: uid=%s thread=%s file=%s chunks=%d total=%d",
-            uid, thread_id, uploaded_file.filename, len(chunks), total,
-        )
+        upsert_user_file_chunks(embed_model, pinecone_index, uid, doc_id, filename, chunks)
+
+        _user_files_ref(uid).document(doc_id).set({
+            "doc_id": doc_id,
+            "filename": filename,
+            "chunk_count": len(chunks),
+            "size_bytes": len(file_bytes),
+            "uploaded_at": SERVER_TIMESTAMP,
+        })
+
+        logger.info("/upload_document: uid=%s doc_id=%s file=%s chunks=%d", uid, doc_id, filename, len(chunks))
+
+        # Return updated file list so frontend can refresh in one round-trip
+        all_files = _get_user_files(uid)
         return ok({
-            "thread_id": thread_id,
+            "doc_id": doc_id,
+            "filename": filename,
             "chunks_indexed": len(chunks),
-            "total_chunks": total,
-            "filename": uploaded_file.filename,
+            "files": all_files,
         })
     except Exception as e:
         logger.error("/upload_document: error: %s", e, exc_info=True)
         return fail("Error al procesar el documento.", 500, details=str(e))
+
+
+@limiter.limit("30/minute")
+@app.route("/user_files", methods=["GET"])
+def list_user_files():
+    """Returns the list of files the authenticated user has uploaded."""
+    decoded_user = require_firebase_user_or_403()
+    uid = decoded_user["uid"]
+    try:
+        return ok({"files": _get_user_files(uid)})
+    except Exception as e:
+        logger.error("/user_files GET: uid=%s error=%s", uid, e, exc_info=True)
+        return fail("Error al obtener los documentos.", 500)
+
+
+@limiter.limit("20/minute")
+@app.route("/user_files/<doc_id>", methods=["DELETE"])
+def delete_user_file(doc_id: str):
+    """Deletes a user's uploaded file from Pinecone and Firestore."""
+    decoded_user = require_firebase_user_or_403()
+    uid = decoded_user["uid"]
+
+    if pinecone_index is None:
+        return fail("El servicio de almacenamiento no está disponible.", 503)
+
+    file_ref = _user_files_ref(uid).document(doc_id)
+    file_doc = file_ref.get()
+    if not file_doc.exists:
+        return fail("Documento no encontrado.", 404)
+
+    data = file_doc.to_dict()
+    chunk_count = data.get("chunk_count", 0)
+    filename = data.get("filename", doc_id)
+
+    try:
+        delete_user_file_chunks(pinecone_index, uid, doc_id, chunk_count)
+        file_ref.delete()
+        logger.info("/user_files DELETE: uid=%s doc_id=%s file=%s chunks=%d", uid, doc_id, filename, chunk_count)
+        return ok({"doc_id": doc_id, "deleted": True, "files": _get_user_files(uid)})
+    except Exception as e:
+        logger.error("/user_files DELETE: uid=%s doc_id=%s error=%s", uid, doc_id, e, exc_info=True)
+        return fail("Error al eliminar el documento.", 500, details=str(e))
 
 
 @limiter.limit("10/minute")
